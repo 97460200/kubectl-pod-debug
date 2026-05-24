@@ -58,6 +58,7 @@ async fn main() -> error::Result<()> {
         println!("Node:       {} ({})", node_name, node_ip);
         println!("SSH:        {}@{}:{}", cli.ssh_user, node_ip, cli.ssh_port);
         println!("NS Type:    {}", cli.ns_type);
+        println!("Enter Mount: {}", cli.enter_mount);
         println!("Runtime:    {}", cli.runtime);
         println!("Command:    {}", if cli.command.is_empty() { "/bin/bash (interactive)".to_string() } else { cli.command.join(" ") });
         return Ok(());
@@ -94,7 +95,7 @@ async fn main() -> error::Result<()> {
     tracing::info!("Container PID: {}", pid);
 
     // 10. 构建 nsenter 命令
-    let nsenter_cmd = nsenter::builder::build_nsenter_command(pid, &cli.ns_type, &cli.command);
+    let nsenter_cmd = nsenter::builder::build_nsenter_command(pid, &cli.ns_type, cli.enter_mount, &cli.command);
     tracing::info!("nsenter command: {}", nsenter_cmd);
 
     // 11. 执行命令

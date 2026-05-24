@@ -1,6 +1,6 @@
 [package]
 name = "kubectl-pod-debug"
-version = "0.1.6"
+version = "0.1.7"
 edition = "2021"
 description = "kubectl plugin for debugging pod network/process via nsenter on host node"
 license = "MIT"

@@ -31,6 +31,10 @@ pub struct Cli {
     #[arg(long, default_value = "all", value_parser = ["network", "pid", "mount", "uts", "ipc", "all"])]
     pub ns_type: String,
 
+    /// Also enter container mount namespace (default: use host /bin/bash without mount ns)
+    #[arg(long)]
+    pub enter_mount: bool,
+
     /// Container runtime: auto, containerd, docker
     #[arg(long, default_value = "auto", value_parser = ["auto", "containerd", "docker"])]
     pub runtime: String,

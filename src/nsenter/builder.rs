@@ -13,9 +13,13 @@ static NS_FLAGS: &[(&str, &str)] = &[
 /// - `pid`: 容器进程 PID
 /// - `ns_type`: namespace 类型（"all", "network", "pid" 等）
 /// - `command`: 要在 namespace 中执行的命令（空则使用 /bin/bash）
-pub fn build_nsenter_command(pid: u32, ns_type: &str, command: &[String]) -> String {
+pub fn build_nsenter_command(pid: u32, ns_type: &str, enter_mount: bool, command: &[String]) -> String {
     let ns_flags = if ns_type == "all" {
-        "-a".to_string()
+        if enter_mount {
+            "-a".to_string()
+        } else {
+            "-n -p -u -i".to_string()
+        }
     } else {
         NS_FLAGS
             .iter()
@@ -39,26 +43,32 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_build_all_ns() {
-        let cmd = build_nsenter_command(12345, "all", &[]);
+    fn test_build_all_ns_no_mount() {
+        let cmd = build_nsenter_command(12345, "all", false, &[]);
+        assert_eq!(cmd, "nsenter -t 12345 -n -p -u -i -- /bin/bash");
+    }
+
+    #[test]
+    fn test_build_all_ns_with_mount() {
+        let cmd = build_nsenter_command(12345, "all", true, &[]);
         assert_eq!(cmd, "nsenter -t 12345 -a -- /bin/bash");
     }
 
     #[test]
     fn test_build_network_ns() {
-        let cmd = build_nsenter_command(12345, "network", &[]);
+        let cmd = build_nsenter_command(12345, "network", false, &[]);
         assert_eq!(cmd, "nsenter -t 12345 -n -- /bin/bash");
     }
 
     #[test]
     fn test_build_with_command() {
-        let cmd = build_nsenter_command(12345, "network", &["tcpdump".to_string(), "-i".to_string(), "eth0".to_string()]);
+        let cmd = build_nsenter_command(12345, "network", false, &["tcpdump".to_string(), "-i".to_string(), "eth0".to_string()]);
         assert_eq!(cmd, "nsenter -t 12345 -n -- tcpdump -i eth0");
     }
 
     #[test]
     fn test_build_pid_ns() {
-        let cmd = build_nsenter_command(12345, "pid", &[]);
+        let cmd = build_nsenter_command(12345, "pid", false, &[]);
         assert_eq!(cmd, "nsenter -t 12345 -p -- /bin/bash");
     }
 }

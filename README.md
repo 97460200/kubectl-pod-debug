@@ -50,7 +50,8 @@ kubectl pod-debug <pod>
        ├─ 1. Query K8s API → get pod info (node, containerID)
        ├─ 2. SSH to host node
        ├─ 3. Detect runtime (containerd/docker) → get container PID
-       ├─ 4. nsenter -t <PID> -a
+       ├─ 4. nsenter -t <PID> -n -p -u -i (no mount, use host /bin/bash)
+       │    (add --enter-mount to include mount ns for container filesystem)
        └─ 5. Your debug commands run inside pod's namespaces
 ```
 
@@ -132,8 +133,11 @@ kubectl pod-debug my-pod --ns-type pid -- ls -la /proc/1/fd
 ### Full Namespace Debugging
 
 ```bash
-# Enter all namespaces (default)
+# Enter all namespaces except mount (default — use host /bin/bash)
 kubectl pod-debug my-pod -n production
+
+# Enter all namespaces including mount (container rootfs — needs /bin/sh in image)
+kubectl pod-debug my-pod -n production --enter-mount
 
 # Specify container in multi-container pod
 kubectl pod-debug my-pod -c sidecar-container
@@ -153,6 +157,7 @@ kubectl pod-debug my-pod --dry-run
 | `--ssh-key` | `-i` | `~/.ssh/id_rsa` | SSH private key path |
 | `--ssh-port` | | `22` | SSH port |
 | `--ns-type` | | `all` | Namespace: `network`, `pid`, `mount`, `uts`, `ipc`, `all` |
+| `--enter-mount` | | `false` | Also enter mount namespace (container rootfs) |
 | `--runtime` | | `auto` | Container runtime: `auto`, `containerd`, `docker` |
 | `--kubeconfig` | | auto | Path to kubeconfig file |
 | `--context` | | current | Kubernetes context |

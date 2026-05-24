@@ -50,7 +50,8 @@ kubectl pod-debug <pod>
        ├─ 1. 查询 K8s API → 获取 Pod 信息（节点、容器ID）
        ├─ 2. SSH 到宿主机节点
        ├─ 3. 检测运行时（containerd/docker）→ 获取容器 PID
-       ├─ 4. nsenter -t <PID> -a
+       ├─ 4. nsenter -t <PID> -n -p -u -i（不进入 mount，使用宿主机 /bin/bash）
+       │    （添加 --enter-mount 可一并进入 mount namespace 查看容器文件系统）
        └─ 5. 你的调试命令在 Pod 的 namespace 中执行
 ```
 
@@ -132,8 +133,11 @@ kubectl pod-debug my-pod --ns-type pid -- ls -la /proc/1/fd
 ### 全功能调试
 
 ```bash
-# 进入所有 namespace（默认行为）
+# 进入除 mount 外的所有 namespace（默认 — 使用宿主机 /bin/bash）
 kubectl pod-debug my-pod -n production
+
+# 进入所有 namespace 包括 mount（容器文件系统 — 需要镜像中有 /bin/sh）
+kubectl pod-debug my-pod -n production --enter-mount
 
 # 指定多容器 Pod 中的某个容器
 kubectl pod-debug my-pod -c sidecar-container
@@ -153,6 +157,7 @@ kubectl pod-debug my-pod --dry-run
 | `--ssh-key` | `-i` | `~/.ssh/id_rsa` | SSH 私钥路径 |
 | `--ssh-port` | | `22` | SSH 端口 |
 | `--ns-type` | | `all` | Namespace 类型：`network`、`pid`、`mount`、`uts`、`ipc`、`all` |
+| `--enter-mount` | | `false` | 同时进入容器 mount namespace（容器文件系统） |
 | `--runtime` | | `auto` | 容器运行时：`auto`、`containerd`、`docker` |
 | `--kubeconfig` | | 自动检测 | kubeconfig 文件路径 |
 | `--context` | | 当前 context | Kubernetes context |
