@@ -34,6 +34,9 @@ pub enum PodDebugError {
 
     #[error("IO error: {0}")]
     IoError(#[from] std::io::Error),
+
+    #[error("SSH error: {0}")]
+    SshError(#[from] russh::Error),
 }
 
 pub type Result<T> = std::result::Result<T, PodDebugError>;

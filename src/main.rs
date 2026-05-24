@@ -1,6 +1,7 @@
 mod cli;
 mod error;
 mod k8s;
+mod ssh;
 
 use cli::Cli;
 use clap::Parser;
