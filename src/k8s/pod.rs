@@ -67,8 +67,8 @@ pub fn get_container_id(pod: &Pod, container_name: &str) -> Result<String> {
 
     // 去掉运行时前缀（"containerd://xxxxx" -> "xxxxx"）
     let id = container_id
-        .splitn(2, "://")
-        .nth(1)
+        .split_once("://")
+        .map(|x| x.1)
         .unwrap_or(container_id)
         .to_string();
 

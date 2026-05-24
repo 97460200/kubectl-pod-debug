@@ -96,6 +96,7 @@ pub async fn connect(
 }
 
 /// Disconnect an SSH session gracefully.
+#[allow(dead_code)]
 pub async fn disconnect(session: &mut client::Handle<SshClient>) -> Result<()> {
     session
         .disconnect(Disconnect::ByApplication, "", "")
