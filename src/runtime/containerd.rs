@@ -3,17 +3,68 @@ use crate::ssh::connect::SshClient;
 use crate::ssh::exec::exec_command;
 use russh::client::Handle;
 
-/// 通过 crictl 获取容器 PID
+fn find_pid(value: &serde_json::Value) -> Option<u32> {
+    match value {
+        serde_json::Value::Object(map) => {
+            for (k, v) in map {
+                if k.eq_ignore_ascii_case("pid") {
+                    if let Some(pid) = v.as_u64().and_then(|x| u32::try_from(x).ok()) {
+                        return Some(pid);
+                    }
+                }
+                if let Some(pid) = find_pid(v) {
+                    return Some(pid);
+                }
+            }
+            None
+        }
+        serde_json::Value::Array(arr) => arr.iter().find_map(find_pid),
+        _ => None,
+    }
+}
+
+fn parse_pid(output: &str) -> Option<u32> {
+    serde_json::from_str::<serde_json::Value>(output)
+        .ok()
+        .and_then(|v| find_pid(&v))
+}
+
 pub async fn get_container_pid(session: &Handle<SshClient>, container_id: &str) -> Result<u32> {
-    let cmd = format!(
-        "crictl inspect {} 2>/dev/null | grep -o '\"pid\"[[:space:]]*:[[:space:]]*[0-9]*' | grep -o '[0-9]*' | head -1",
-        container_id
-    );
+    let mut reasons = Vec::new();
 
-    let output = exec_command(session, &cmd).await?;
-    let pid_str = output.trim();
+    let crictl_cmd = format!("crictl inspect {} 2>/dev/null", container_id);
+    match exec_command(session, &crictl_cmd).await {
+        Ok(output) => {
+            if let Some(pid) = parse_pid(&output) {
+                return Ok(pid);
+            }
+            reasons.push(format!(
+                "crictl inspect returned no pid (first 200 chars): {}",
+                output.chars().take(200).collect::<String>()
+            ));
+        }
+        Err(e) => reasons.push(format!("crictl inspect failed: {}", e)),
+    }
 
-    pid_str.parse::<u32>().map_err(|_| PodDebugError::PidLookupFailed {
-        reason: format!("Failed to parse PID from crictl output: '{}'", pid_str),
+    let ctr_cmd = format!("ctr -n k8s.io tasks info {} 2>/dev/null", container_id);
+    match exec_command(session, &ctr_cmd).await {
+        Ok(output) => {
+            if let Some(pid) = parse_pid(&output) {
+                return Ok(pid);
+            }
+            reasons.push(format!(
+                "ctr tasks info returned no pid (first 200 chars): {}",
+                output.chars().take(200).collect::<String>()
+            ));
+        }
+        Err(e) => reasons.push(format!("ctr tasks info failed: {}", e)),
+    }
+
+    Err(PodDebugError::PidLookupFailed {
+        reason: format!(
+            "Unable to determine container PID for '{}': {}",
+            container_id,
+            reasons.join(" | ")
+        ),
     })
 }

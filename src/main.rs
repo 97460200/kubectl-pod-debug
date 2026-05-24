@@ -69,7 +69,7 @@ async fn main() -> error::Result<()> {
 
     // 8. 检测/确定容器运行时
     let runtime_type = if cli.runtime == "auto" {
-        let detected = runtime::detector::detect_runtime(&session).await?;
+        let detected = runtime::detector::detect_runtime(&session, &node_name).await?;
         tracing::info!("Detected container runtime: {:?}", detected);
         detected
     } else {
