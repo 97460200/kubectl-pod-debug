@@ -1,92 +1,101 @@
-<h1 align="center">
-  <img src="https://img.shields.io/badge/kubectl--plugin-pod--debug-blue?style=for-the-badge" alt="kubectl plugin"/>
-  <img src="https://img.shields.io/badge/Rust-1.95-orange?style=flat-square&logo=rust" alt="Rust"/>
-  <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="License"/>
-  <img src="https://img.shields.io/badge/platform-Linux%20%7C%20macOS-lightgrey?style=flat-square" alt="Platform"/>
-</h1>
+<h1 align="center">kubectl-pod-debug</h1>
 
 <p align="center">
-  <strong>kubectl plugin for debugging pod network/process via nsenter on host node</strong><br/>
-  No extra container needed — use host-native debug tools directly.
+  <strong>Debug Kubernetes pods from the host node — no extra containers needed.</strong><br/>
+  SSH into the node, nsenter the pod's namespaces, use all host-native tools.
 </p>
 
 <p align="center">
-  <strong>English</strong> | <a href="README_zh.md">中文</a>
+  <a href="README_zh.md">中文</a>
 </p>
 
 ---
 
-## Why kubectl-pod-debug?
-
-| | `kubectl debug` | **kubectl-pod-debug** |
-|---|---|---|
-| **How** | Creates ephemeral container | SSH → `nsenter` on host |
-| **Tools** | Limited to debug image | All host-native tools |
-| **Network view** | Shared pod namespace | Direct pod namespace |
-| **Extra resources** | Creates temp container/Pod | **Zero overhead** |
-| **Prerequisite** | EphemeralContainer feature | SSH access to nodes |
-
 ## Quick Start
 
 ```bash
-# One-line install
+# Install
 curl -fsSL https://raw.githubusercontent.com/97460200/kubectl-pod-debug/main/install.sh | bash
 
-# Enter pod's all namespaces interactively
-kubectl pod-debug my-pod -n my-namespace
+# Enter a pod's namespaces interactively
+kubectl pod debug my-pod -n my-ns
 
 # Capture network packets
-kubectl pod-debug my-pod -- tcpdump -i eth0 -c 100
+kubectl pod debug my-pod -- tcpdump -i eth0 -c 100
 
-# Check routing table
-kubectl pod-debug my-pod --ns-type network -- ip route show
+# Debug Java (or any language) — the process list shows host PIDs
+kubectl pod debug my-pod -v
+# Output: HOST_PID: 12345 CMD: java -jar app.jar
+# Then: ssh root@<node> "jstack 12345"
+
+# View container processes only
+kubectl pod debug my-pod --enter-mount -- /bin/sh
 ```
 
 ## How It Works
 
 ```
-kubectl pod-debug <pod>
+kubectl pod debug <pod>
        │
-       ├─ 1. Query K8s API → get pod info (node, containerID)
+       ├─ 1. Query K8s API → pod info (node, containerID)
        ├─ 2. SSH to host node
-       ├─ 3. Detect runtime (containerd/docker) → get container PID
-       ├─ 4. nsenter -t <PID> -a
-       └─ 5. Your debug commands run inside pod's namespaces
+       ├─ 3. Detect runtime → get container PID
+       ├─ 4. Scan /proc/<pid>/ns/pid → map all container processes
+       ├─ 5. nsenter -n -p -u -i (host /bin/bash, no mount ns)
+       └─ 6. Your debug commands run in pod's network/PID namespaces
 ```
+
+## Why Not `kubectl debug`?
+
+| | `kubectl debug` | `kubectl-pod-debug` |
+|---|---|---|
+| **Mechanism** | Creates ephemeral container | SSH → `nsenter` on host |
+| **Tools** | Limited to debug image | All host-native tools |
+| **Resources** | Extra container/Pod | Zero overhead |
+| **Prerequisite** | EphemeralContainer feature gate | SSH access to node |
+| **Process view** | Container-only | Host PID mapping included |
+
+## Universal Debugging
+
+The `-v` flag prints every container process mapped to its host PID:
+
+```
+Container PID: 5782
+=== Container Processes (host PID -> cmd) ===
+  HOST_PID: 5782  CMD: /bin/prometheus ...
+  HOST_PID: 5819  CMD: /bin/prometheus-config-reloader ...
+```
+
+Then use any host tool directly via SSH:
+
+| Language | Command |
+|----------|---------|
+| Java | `ssh root@<node> "jstack 5782"` |
+| Go | `ssh root@<node> "dlv attach 5782"` |
+| .NET | `ssh root@<node> "dotnet-dump collect -p 5782"` |
+| Python/C/Rust | `ssh root@<node> "gdb -p 5782"` |
+| Any | `ssh root@<node> "strace -p 5782"` |
 
 ## Installation
 
-### One-line Install (Recommended)
+### One-line
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/97460200/kubectl-pod-debug/main/install.sh | bash
 ```
 
-Options:
-
-```bash
-# Install specific version
-curl -fsSL ... | bash -s -- --tag v0.1.0
-
-# Custom install path
-curl -fsSL ... | bash -s -- --path /opt/bin
-
-# Force overwrite
-curl -fsSL ... | bash -s -- --force
-```
-
-### Download Pre-built Binaries
+### Pre-built Binaries
 
 | Platform | Architecture | File |
 |----------|-------------|------|
-| Linux | x86_64 (AMD64) | `kubectl-pod-debug-linux-amd64` |
+| Linux | AMD64 | `kubectl-pod-debug-linux-amd64` |
 | Linux | ARM64 | `kubectl-pod-debug-linux-arm64` |
-| macOS | x86_64 (Intel) | `kubectl-pod-debug-darwin-amd64` |
-| macOS | ARM64 (Apple Silicon) | `kubectl-pod-debug-darwin-arm64` |
+| macOS | Intel | `kubectl-pod-debug-darwin-amd64` |
+| macOS | Apple Silicon | `kubectl-pod-debug-darwin-arm64` |
 
-**Latest Release**: https://github.com/97460200/kubectl-pod-debug/releases/latest
+[Latest Release](https://github.com/97460200/kubectl-pod-debug/releases/latest)
 
-### Build from Source
+### From Source
 
 ```bash
 git clone https://github.com/97460200/kubectl-pod-debug.git
@@ -95,91 +104,82 @@ cargo build --release
 sudo cp target/release/kubectl-pod-debug /usr/local/bin/
 ```
 
-## Usage Examples
+## Usage
 
 ### Network Debugging
 
 ```bash
-# Enter pod's network namespace interactively
-kubectl pod-debug my-pod --ns-type network
+# Enter network namespace only
+kubectl pod debug my-pod --ns-type network
 
-# Capture packets on eth0
-kubectl pod-debug my-pod -- tcpdump -i eth0 -w /tmp/capture.pcap
+# Capture packets
+kubectl pod debug my-pod -- tcpdump -i eth0 -w /tmp/capture.pcap
 
-# Check DNS resolution
-kubectl pod-debug my-pod --ns-type network -- nslookup kubernetes.default.svc.cluster.local
+# Check DNS
+kubectl pod debug my-pod --ns-type network -- nslookup kubernetes.default
 
 # View iptables rules
-kubectl pod-debug my-pod --ns-type network -- iptables -L -n -v
-
-# Test connectivity
-kubectl pod-debug my-pod --ns-type network -- ping -c 3 10.96.0.1
+kubectl pod debug my-pod --ns-type network -- iptables -L -n -v
 ```
 
 ### Process Debugging
 
 ```bash
 # View container processes
-kubectl pod-debug my-pod --ns-type pid -- ps aux
+kubectl pod debug my-pod --ns-type pid -- ps --ppid 1 -o pid,comm
 
 # Trace system calls
-kubectl pod-debug my-pod --ns-type pid -- strace -p 1
+kubectl pod debug my-pod --ns-type pid -- strace -p 1
 
-# View file descriptors
-kubectl pod-debug my-pod --ns-type pid -- ls -la /proc/1/fd
+# File descriptors
+kubectl pod debug my-pod --ns-type pid -- ls -la /proc/1/fd
 ```
 
 ### Full Namespace Debugging
 
 ```bash
-# Enter all namespaces (default)
-kubectl pod-debug my-pod -n production
+# Enter all except mount (default — access host /bin/bash)
+kubectl pod debug my-pod -n production
 
-# Specify container in multi-container pod
-kubectl pod-debug my-pod -c sidecar-container
+# Enter all including mount (container rootfs)
+kubectl pod debug my-pod -n production --enter-mount
 
-# Dry run — see what would be executed
-kubectl pod-debug my-pod --dry-run
+# Dry run — preview
+kubectl pod debug my-pod --dry-run
 ```
 
-## CLI Options
+## CLI Reference
 
 | Option | Short | Default | Description |
 |--------|-------|---------|-------------|
-| `<POD_NAME>` | | (required) | Target pod name |
+| `<POD_NAME>` | | required | Target pod name |
 | `--namespace` | `-n` | `default` | Kubernetes namespace |
-| `--container` | `-c` | first container | Target container name |
-| `--ssh-user` | | `root` | SSH user for node connection |
-| `--ssh-key` | `-i` | `~/.ssh/id_rsa` | SSH private key path |
+| `--container` | `-c` | first | Target container |
+| `--ssh-user` | | `root` | SSH user |
+| `--ssh-key` | `-i` | `~/.ssh/id_rsa` | SSH private key |
 | `--ssh-port` | | `22` | SSH port |
-| `--ns-type` | | `all` | Namespace: `network`, `pid`, `mount`, `uts`, `ipc`, `all` |
-| `--runtime` | | `auto` | Container runtime: `auto`, `containerd`, `docker` |
-| `--kubeconfig` | | auto | Path to kubeconfig file |
+| `--ns-type` | | `all` | `network` `pid` `mount` `uts` `ipc` `all` |
+| `--enter-mount` | | false | Include mount namespace |
+| `--runtime` | | `auto` | `auto` `containerd` `docker` |
+| `--kubeconfig` | | auto | kubeconfig path |
 | `--context` | | current | Kubernetes context |
-| `--dry-run` | | `false` | Show commands without executing |
-| `--verbose` | `-v` | `false` | Enable verbose output |
-| `-- <cmd>` | | | Command to execute (use `--` to separate) |
+| `--dry-run` | | false | Preview only |
+| `--verbose` | `-v` | false | Show process list + logs |
 
 ## Prerequisites
 
-- SSH access to all Kubernetes nodes
-- `crictl` or `docker` installed on nodes
-- `nsenter` installed on nodes (included in most Linux distributions)
+- SSH key-based access to all nodes
+- `nsenter` on nodes (included in most Linux distros)
+- `crictl` or `docker` on nodes
 
 ## Tech Stack
 
-- **Rust** — performance, safety, single binary distribution
-- **kube + k8s-openapi** — Kubernetes API client
-- **russh** — pure Rust SSH client
+- **Rust** — safe, fast, single binary
+- **kube + k8s-openapi** — K8s API client
+- **russh** — async SSH in pure Rust
 - **clap** — CLI argument parsing
 - **tokio** — async runtime
 
 ## License
 
 [MIT](LICENSE)
-
----
-
-<p align="center">
-  <sub>Built with ❤️ for Kubernetes developers</sub>
-</p>

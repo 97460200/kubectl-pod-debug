@@ -1,30 +1,15 @@
-<h1 align="center">
-  <img src="https://img.shields.io/badge/kubectl--plugin-pod--debug-blue?style=for-the-badge" alt="kubectl plugin"/>
-  <img src="https://img.shields.io/badge/Rust-1.95-orange?style=flat-square&logo=rust" alt="Rust"/>
-  <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="License"/>
-  <img src="https://img.shields.io/badge/platform-Linux%20%7C%20macOS-lightgrey?style=flat-square" alt="Platform"/>
-</h1>
+<h1 align="center">kubectl-pod-debug</h1>
 
 <p align="center">
-  <strong>通过 nsenter 在宿主机上调试 Pod 网络和进程的 kubectl 插件</strong><br/>
-  无需拉起额外容器 — 直接使用宿主机原生调试工具
+  <strong>在宿主机上调试 Kubernetes Pod——无需额外容器。</strong><br/>
+  SSH 到节点，nsenter 进入 Pod namespace，使用宿主机全部原生工具。
 </p>
 
 <p align="center">
-  <a href="README.md">English</a> | <strong>中文</strong>
+  <a href="README.md">English</a>
 </p>
 
 ---
-
-## 为什么选择 kubectl-pod-debug？
-
-| | `kubectl debug` | **kubectl-pod-debug** |
-|---|---|---|
-| **原理** | 创建临时容器 | SSH → 宿主机 `nsenter` |
-| **可用工具** | 受限于调试镜像 | 宿主机上所有原生工具 |
-| **网络视角** | 共享 Pod 的 network namespace | 直接进入 Pod 的 network namespace |
-| **额外资源** | 创建临时容器/Pod | **零开销** |
-| **前置条件** | 需要 EphemeralContainer 特性 | 需要 SSH 访问节点 |
 
 ## 快速开始
 
@@ -32,59 +17,83 @@
 # 一键安装
 curl -fsSL https://raw.githubusercontent.com/97460200/kubectl-pod-debug/main/install.sh | bash
 
-# 交互式进入 Pod 的所有 namespace
-kubectl pod-debug my-pod -n my-namespace
+# 交互式进入 Pod 的 namespace
+kubectl pod debug my-pod -n my-ns
 
-# 抓包
-kubectl pod-debug my-pod -- tcpdump -i eth0 -c 100
+# 抓网络包
+kubectl pod debug my-pod -- tcpdump -i eth0 -c 100
 
-# 查看路由表
-kubectl pod-debug my-pod --ns-type network -- ip route show
+# 调试 Java（或任意语言）——进程列表会显示宿主机 PID
+kubectl pod debug my-pod -v
+# 输出: HOST_PID: 12345 CMD: java -jar app.jar
+# 然后: ssh root@<node> "jstack 12345"
+
+# 只看容器内进程（需要镜像里有 shell）
+kubectl pod debug my-pod --enter-mount -- /bin/sh
 ```
 
 ## 工作原理
 
 ```
-kubectl pod-debug <pod>
+kubectl pod debug <pod>
        │
        ├─ 1. 查询 K8s API → 获取 Pod 信息（节点、容器ID）
        ├─ 2. SSH 到宿主机节点
-       ├─ 3. 检测运行时（containerd/docker）→ 获取容器 PID
-       ├─ 4. nsenter -t <PID> -a
-       └─ 5. 你的调试命令在 Pod 的 namespace 中执行
+       ├─ 3. 检测运行时 → 获取容器 PID
+       ├─ 4. 扫描 /proc/<pid>/ns/pid → 映射容器所有进程
+       ├─ 5. nsenter -n -p -u -i（使用宿主机 /bin/bash，不进入 mount ns）
+       └─ 6. 调试命令在 Pod 的 network/PID namespace 中执行
 ```
+
+## 为什么选择 kubectl-pod-debug？
+
+| | kubectl debug | kubectl-pod-debug |
+|---|---|---|
+| **原理** | 创建临时容器 | SSH → 宿主机 nsenter |
+| **可用工具** | 受限于调试镜像 | 宿主机全部原生工具 |
+| **额外资源** | 需创建临时容器/Pod | 零开销 |
+| **前置条件** | EphemeralContainer 特性 | SSH 访问节点 |
+| **进程视图** | 仅容器内部进程 | 包含宿主机 PID 映射 |
+
+## 通用调试方案
+
+`-v` 会列出容器所有进程及其宿主机 PID：
+
+```
+Container PID: 5782
+=== Container Processes (host PID -> cmd) ===
+  HOST_PID: 5782  CMD: /bin/prometheus ...
+  HOST_PID: 5819  CMD: /bin/prometheus-config-reloader ...
+```
+
+拿到宿主机 PID 后，SSH 到节点直接用工具：
+
+| 语言 | 命令 |
+|------|------|
+| Java | `ssh root@<node> "jstack 5782"` |
+| Go | `ssh root@<node> "dlv attach 5782"` |
+| .NET | `ssh root@<node> "dotnet-dump collect -p 5782"` |
+| Python/C/Rust | `ssh root@<node> "gdb -p 5782"` |
+| 任意 | `ssh root@<node> "strace -p 5782"` |
 
 ## 安装
 
-### 一键安装（推荐）
+### 一键安装
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/97460200/kubectl-pod-debug/main/install.sh | bash
 ```
 
-可选参数：
-
-```bash
-# 安装指定版本
-curl -fsSL ... | bash -s -- --tag v0.1.0
-
-# 自定义安装路径
-curl -fsSL ... | bash -s -- --path /opt/bin
-
-# 强制覆盖已有安装
-curl -fsSL ... | bash -s -- --force
-```
-
-### 下载预编译二进制
+### 预编译二进制
 
 | 平台 | 架构 | 文件 |
 |------|------|------|
-| Linux | x86_64 (AMD64) | `kubectl-pod-debug-linux-amd64` |
+| Linux | AMD64 | `kubectl-pod-debug-linux-amd64` |
 | Linux | ARM64 | `kubectl-pod-debug-linux-arm64` |
-| macOS | x86_64 (Intel) | `kubectl-pod-debug-darwin-amd64` |
-| macOS | ARM64 (Apple Silicon) | `kubectl-pod-debug-darwin-arm64` |
+| macOS | Intel | `kubectl-pod-debug-darwin-amd64` |
+| macOS | Apple Silicon | `kubectl-pod-debug-darwin-arm64` |
 
-**最新版本**: https://github.com/97460200/kubectl-pod-debug/releases/latest
+[最新 Release](https://github.com/97460200/kubectl-pod-debug/releases/latest)
 
 ### 从源码编译
 
@@ -100,86 +109,77 @@ sudo cp target/release/kubectl-pod-debug /usr/local/bin/
 ### 网络调试
 
 ```bash
-# 交互式进入 Pod 的网络 namespace
-kubectl pod-debug my-pod --ns-type network
+# 只进入网络 namespace
+kubectl pod debug my-pod --ns-type network
 
-# 在 eth0 上抓包
-kubectl pod-debug my-pod -- tcpdump -i eth0 -w /tmp/capture.pcap
+# 抓包
+kubectl pod debug my-pod -- tcpdump -i eth0 -w /tmp/capture.pcap
 
-# 检查 DNS 解析
-kubectl pod-debug my-pod --ns-type network -- nslookup kubernetes.default.svc.cluster.local
+# 检查 DNS
+kubectl pod debug my-pod --ns-type network -- nslookup kubernetes.default
 
 # 查看 iptables 规则
-kubectl pod-debug my-pod --ns-type network -- iptables -L -n -v
-
-# 测试连通性
-kubectl pod-debug my-pod --ns-type network -- ping -c 3 10.96.0.1
+kubectl pod debug my-pod --ns-type network -- iptables -L -n -v
 ```
 
 ### 进程调试
 
 ```bash
 # 查看容器进程
-kubectl pod-debug my-pod --ns-type pid -- ps aux
+kubectl pod debug my-pod --ns-type pid -- ps --ppid 1 -o pid,comm
 
 # 跟踪系统调用
-kubectl pod-debug my-pod --ns-type pid -- strace -p 1
+kubectl pod debug my-pod --ns-type pid -- strace -p 1
 
-# 查看文件描述符
-kubectl pod-debug my-pod --ns-type pid -- ls -la /proc/1/fd
+# 文件描述符
+kubectl pod debug my-pod --ns-type pid -- ls -la /proc/1/fd
 ```
 
-### 全功能调试
+### 全 namespace 调试
 
 ```bash
-# 进入所有 namespace（默认行为）
-kubectl pod-debug my-pod -n production
+# 进入除 mount 外的所有 namespace（默认——使用宿主机 /bin/bash）
+kubectl pod debug my-pod -n production
 
-# 指定多容器 Pod 中的某个容器
-kubectl pod-debug my-pod -c sidecar-container
+# 进入所有 namespace 包括 mount（容器 rootfs）
+kubectl pod debug my-pod -n production --enter-mount
 
-# Dry-run — 查看将要执行的命令
-kubectl pod-debug my-pod --dry-run
+# Dry-run——预览
+kubectl pod debug my-pod --dry-run
 ```
 
 ## CLI 参数
 
 | 参数 | 缩写 | 默认值 | 说明 |
 |------|------|--------|------|
-| `<POD_NAME>` | | （必填） | 目标 Pod 名称 |
+| `<POD_NAME>` | | 必填 | 目标 Pod 名称 |
 | `--namespace` | `-n` | `default` | Kubernetes 命名空间 |
-| `--container` | `-c` | 第一个容器 | 目标容器名称 |
-| `--ssh-user` | | `root` | 连接节点使用的 SSH 用户 |
+| `--container` | `-c` | 第一个 | 目标容器名称 |
+| `--ssh-user` | | `root` | SSH 用户 |
 | `--ssh-key` | `-i` | `~/.ssh/id_rsa` | SSH 私钥路径 |
 | `--ssh-port` | | `22` | SSH 端口 |
-| `--ns-type` | | `all` | Namespace 类型：`network`、`pid`、`mount`、`uts`、`ipc`、`all` |
-| `--runtime` | | `auto` | 容器运行时：`auto`、`containerd`、`docker` |
-| `--kubeconfig` | | 自动检测 | kubeconfig 文件路径 |
-| `--context` | | 当前 context | Kubernetes context |
-| `--dry-run` | | `false` | 仅显示将要执行的命令 |
-| `--verbose` | `-v` | `false` | 启用详细输出 |
-| `-- <命令>` | | | 在 Pod namespace 中执行的命令（用 `--` 分隔） |
+| `--ns-type` | | `all` | `network` `pid` `mount` `uts` `ipc` `all` |
+| `--enter-mount` | | false | 同时进入 mount namespace |
+| `--runtime` | | `auto` | `auto` `containerd` `docker` |
+| `--kubeconfig` | | 自动 | kubeconfig 文件路径 |
+| `--context` | | 当前 | Kubernetes context |
+| `--dry-run` | | false | 仅预览 |
+| `--verbose` | `-v` | false | 显示进程列表和日志 |
 
 ## 前置条件
 
-- SSH 访问所有 Kubernetes 节点
+- 可 SSH 密钥登录所有节点
+- 节点上已安装 `nsenter`（大多数 Linux 发行版自带）
 - 节点上已安装 `crictl` 或 `docker`
-- 节点上已安装 `nsenter`（大多数 Linux 发行版已包含）
 
 ## 技术栈
 
-- **Rust** — 高性能、内存安全、单二进制分发
-- **kube + k8s-openapi** — Kubernetes API 客户端
-- **russh** — 纯 Rust SSH 客户端
-- **clap** — CLI 参数解析
+- **Rust** — 安全、高性能、单二进制
+- **kube + k8s-openapi** — K8s API 客户端
+- **russh** — 纯 Rust 异步 SSH
+- **clap** — 命令行参数解析
 - **tokio** — 异步运行时
 
 ## 许可证
 
 [MIT](LICENSE)
-
----
-
-<p align="center">
-  <sub>为 Kubernetes 开发者而造 ❤️</sub>
-</p>
