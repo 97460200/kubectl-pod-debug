@@ -2,6 +2,7 @@ mod cli;
 mod error;
 mod k8s;
 mod nsenter;
+mod runtime;
 mod ssh;
 
 use cli::Cli;
