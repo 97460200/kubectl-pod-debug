@@ -48,12 +48,28 @@ fn parse_pid(output: &str) -> Option<u32> {
     pids.iter().copied().filter(|p| *p > 2).max().or_else(|| pids.into_iter().max())
 }
 
-fn find_child_in_container_pid_ns(
+fn find_container_init(
     session: &Handle<SshClient>,
     shim_pid: u32,
 ) -> impl std::future::Future<Output = Option<u32>> + '_ {
     async move {
-        let cmd = format!("ps --ppid {} -o pid= 2>/dev/null | head -1", shim_pid);
+        let cmd = format!(
+            "host_ns=$(readlink /proc/1/ns/pid 2>/dev/null); \
+             queue=$(cat /proc/{0}/task/{0}/children 2>/dev/null); \
+             for p in $queue; do \
+               if [ \"$(readlink /proc/$p/ns/pid 2>/dev/null)\" != \"$host_ns\" ]; then \
+                 echo $p; exit 0; \
+               fi; \
+             done; \
+             for p in $queue; do \
+               for c in $(cat /proc/$p/task/$p/children 2>/dev/null); do \
+                 if [ \"$(readlink /proc/$c/ns/pid 2>/dev/null)\" != \"$host_ns\" ]; then \
+                   echo $c; exit 0; \
+                 fi; \
+               done; \
+             done",
+            shim_pid
+        );
         exec_command(session, &cmd).await.ok().and_then(|s| s.trim().parse().ok())
     }
 }
@@ -80,10 +96,8 @@ pub async fn get_container_pid(session: &Handle<SshClient>, container_id: &str) 
     };
 
     if let Some(shim_pid) = raw_pid {
-        if let Some(child_pid) = find_child_in_container_pid_ns(session, shim_pid).await {
-            if child_pid > 1 {
-                return Ok(child_pid);
-            }
+        if let Some(init_pid) = find_container_init(session, shim_pid).await {
+            return Ok(init_pid);
         }
         return Ok(shim_pid);
     }
