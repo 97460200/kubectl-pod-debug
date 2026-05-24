@@ -29,6 +29,9 @@ pub enum PodDebugError {
     #[error("Kubernetes API error: {0}")]
     KubeError(#[from] kube::Error),
 
+    #[error("Kubernetes config error: {0}")]
+    KubeConfigError(#[from] kube::config::KubeconfigError),
+
     #[error("IO error: {0}")]
     IoError(#[from] std::io::Error),
 }
