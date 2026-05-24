@@ -116,9 +116,10 @@ async fn main() -> error::Result<()> {
     // 11. 诊断模式
     if cli.diag {
         let dns_names = if cli.command.is_empty() {
+            let svc_name = guess_service_name(&cli.pod_name);
             vec![
                 "kubernetes.default.svc.cluster.local".to_string(),
-                format!("{}.{}.svc.cluster.local", cli.pod_name, cli.namespace),
+                format!("{}.{}.svc.cluster.local", svc_name, cli.namespace),
             ]
         } else {
             cli.command.clone()
@@ -146,4 +147,13 @@ async fn main() -> error::Result<()> {
     }
 
     Ok(())
+}
+
+fn guess_service_name(pod_name: &str) -> &str {
+    let dashes: Vec<usize> = pod_name.match_indices('-').map(|(i, _)| i).collect();
+    if dashes.len() >= 2 {
+        &pod_name[..dashes[dashes.len() - 2]]
+    } else {
+        pod_name
+    }
 }
