@@ -3,30 +3,32 @@ use crate::ssh::connect::SshClient;
 use crate::ssh::exec::exec_command;
 use russh::client::Handle;
 
-fn find_pid(value: &serde_json::Value) -> Option<u32> {
+fn collect_pids(value: &serde_json::Value, out: &mut Vec<u32>) {
     match value {
         serde_json::Value::Object(map) => {
             for (k, v) in map {
                 if k.eq_ignore_ascii_case("pid") {
                     if let Some(pid) = v.as_u64().and_then(|x| u32::try_from(x).ok()) {
-                        return Some(pid);
+                        out.push(pid);
                     }
                 }
-                if let Some(pid) = find_pid(v) {
-                    return Some(pid);
-                }
+                collect_pids(v, out);
             }
-            None
         }
-        serde_json::Value::Array(arr) => arr.iter().find_map(find_pid),
-        _ => None,
+        serde_json::Value::Array(arr) => {
+            for v in arr {
+                collect_pids(v, out);
+            }
+        }
+        _ => {}
     }
 }
 
 fn parse_pid(output: &str) -> Option<u32> {
-    serde_json::from_str::<serde_json::Value>(output)
-        .ok()
-        .and_then(|v| find_pid(&v))
+    let v = serde_json::from_str::<serde_json::Value>(output).ok()?;
+    let mut pids = Vec::new();
+    collect_pids(&v, &mut pids);
+    pids.iter().copied().filter(|p| *p > 2).max().or_else(|| pids.into_iter().max())
 }
 
 pub async fn get_container_pid(session: &Handle<SshClient>, container_id: &str) -> Result<u32> {
