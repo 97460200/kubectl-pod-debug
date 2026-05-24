@@ -48,21 +48,44 @@ fn parse_pid(output: &str) -> Option<u32> {
     pids.iter().copied().filter(|p| *p > 2).max().or_else(|| pids.into_iter().max())
 }
 
+fn find_child_in_container_pid_ns(
+    session: &Handle<SshClient>,
+    shim_pid: u32,
+) -> impl std::future::Future<Output = Option<u32>> + '_ {
+    async move {
+        let cmd = format!("ps --ppid {} -o pid= 2>/dev/null | head -1", shim_pid);
+        exec_command(session, &cmd).await.ok().and_then(|s| s.trim().parse().ok())
+    }
+}
+
 pub async fn get_container_pid(session: &Handle<SshClient>, container_id: &str) -> Result<u32> {
     let mut reasons = Vec::new();
 
     let crictl_cmd = format!("crictl inspect {} 2>/dev/null", container_id);
-    match exec_command(session, &crictl_cmd).await {
-        Ok(output) => {
-            if let Some(pid) = parse_pid(&output) {
-                return Ok(pid);
+    let raw_pid = match exec_command(session, &crictl_cmd).await {
+        Ok(output) => match parse_pid(&output) {
+            Some(pid) => Some(pid),
+            None => {
+                reasons.push(format!(
+                    "crictl inspect returned no pid (first 200 chars): {}",
+                    output.chars().take(200).collect::<String>()
+                ));
+                None
             }
-            reasons.push(format!(
-                "crictl inspect returned no pid (first 200 chars): {}",
-                output.chars().take(200).collect::<String>()
-            ));
+        },
+        Err(e) => {
+            reasons.push(format!("crictl inspect failed: {}", e));
+            None
         }
-        Err(e) => reasons.push(format!("crictl inspect failed: {}", e)),
+    };
+
+    if let Some(shim_pid) = raw_pid {
+        if let Some(child_pid) = find_child_in_container_pid_ns(session, shim_pid).await {
+            if child_pid > 1 {
+                return Ok(child_pid);
+            }
+        }
+        return Ok(shim_pid);
     }
 
     let ctr_cmd = format!("ctr -n k8s.io tasks info {} 2>/dev/null", container_id);
