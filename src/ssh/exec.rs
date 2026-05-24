@@ -1,9 +1,19 @@
+use std::process::Command;
+
 use russh::client;
 use russh::ChannelMsg;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 use crate::error::{PodDebugError, Result};
 use crate::ssh::connect::SshClient;
+
+fn set_raw_mode() {
+    let _ = Command::new("stty").args(["raw", "-echo"]).status();
+}
+
+fn restore_terminal() {
+    let _ = Command::new("stty").args(["sane"]).status();
+}
 
 /// Execute a command on the remote host via SSH and return its combined stdout/stderr output.
 ///
@@ -103,6 +113,8 @@ pub async fn interactive_shell(
         }
     })?;
 
+    set_raw_mode();
+
     let mut stdin = tokio::io::stdin();
     let mut stdout = tokio::io::stdout();
     let mut buf = vec![0; 1024];
@@ -125,6 +137,7 @@ pub async fn interactive_shell(
                         })?;
                     }
                     Err(e) => {
+                        restore_terminal();
                         return Err(PodDebugError::NsenterFailed {
                             reason: format!("Stdin read error: {}", e),
                         });
@@ -167,6 +180,8 @@ pub async fn interactive_shell(
             }
         }
     }
+
+    restore_terminal();
 
     Ok(())
 }
