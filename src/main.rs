@@ -94,6 +94,17 @@ async fn main() -> error::Result<()> {
     };
     tracing::info!("Container PID: {}", pid);
 
+    let procs = runtime::containerd::list_container_processes(&session, pid).await;
+    if !procs.is_empty() {
+        tracing::info!("=== Container Processes (host PID -> cmd) ===");
+        println!("=== Container Processes (host PID -> cmd) ===");
+        for (host_pid, cmdline) in procs {
+            tracing::info!("  HOST_PID: {}  CMD: {}", host_pid, cmdline);
+            println!("  HOST_PID: {}  CMD: {}", host_pid, cmdline);
+        }
+        println!();
+    }
+
     // 10. 构建 nsenter 命令
     let nsenter_cmd = nsenter::builder::build_nsenter_command(pid, &cli.ns_type, cli.enter_mount, &cli.command);
     tracing::info!("nsenter command: {}", nsenter_cmd);

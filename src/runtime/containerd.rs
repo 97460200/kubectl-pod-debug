@@ -48,6 +48,43 @@ fn parse_pid(output: &str) -> Option<u32> {
     pids.iter().copied().filter(|p| *p > 2).max().or_else(|| pids.into_iter().max())
 }
 
+/// 列出与 init_pid 同 PID namespace 的所有进程，返回 (宿主机PID, 命令行)
+pub fn list_container_processes(
+    session: &Handle<SshClient>,
+    init_pid: u32,
+) -> impl std::future::Future<Output = Vec<(u32, String)>> + '_ {
+    async move {
+        let cmd = format!(
+            "init_ns=$(readlink /proc/{0}/ns/pid 2>/dev/null); \
+             for p in $(ls /proc 2>/dev/null | grep '^[0-9]*$' | sort -n); do \
+               ns=$(readlink /proc/$p/ns/pid 2>/dev/null) || continue; \
+               if [ \"$ns\" = \"$init_ns\" ]; then \
+                 cmdline=$(cat /proc/$p/cmdline 2>/dev/null | tr '\\0' ' ' | head -c 120); \
+                 echo \"PID:$p CMD:$cmdline\"; \
+               fi; \
+             done",
+            init_pid
+        );
+        let output = exec_command(session, &cmd).await.unwrap_or_default();
+        output
+            .lines()
+            .filter_map(|line| {
+                let line = line.trim();
+                if line.is_empty() {
+                    return None;
+                }
+                let parts: Vec<&str> = line.splitn(2, ' ').collect();
+                let pid_part = parts.first()?;
+                let pid_str = pid_part.strip_prefix("PID:")?;
+                let host_pid: u32 = pid_str.parse().ok()?;
+                let cmd_part = parts.get(1).unwrap_or(&"");
+                let cmdline = cmd_part.strip_prefix("CMD:").unwrap_or(cmd_part).to_string();
+                Some((host_pid, cmdline))
+            })
+            .collect()
+    }
+}
+
 fn find_container_init(
     session: &Handle<SshClient>,
     shim_pid: u32,
