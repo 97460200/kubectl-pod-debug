@@ -20,16 +20,16 @@ curl -fsSL https://raw.githubusercontent.com/97460200/kubectl-pod-debug/main/ins
 # Enter a pod's namespaces interactively
 kubectl pod debug my-pod -n my-ns
 
+# One-click network diagnostics
+kubectl pod debug my-pod --diag --targets example.com:443
+
 # Capture network packets
 kubectl pod debug my-pod -- tcpdump -i eth0 -c 100
 
-# Debug Java (or any language) — the process list shows host PIDs
+# Debug Java (or any language) — process list shows host PIDs
 kubectl pod debug my-pod -v
 # Output: HOST_PID: 12345 CMD: java -jar app.jar
 # Then: ssh root@<node> "jstack 12345"
-
-# View container processes only
-kubectl pod debug my-pod --enter-mount -- /bin/sh
 ```
 
 ## How It Works
@@ -54,6 +54,7 @@ kubectl pod debug <pod>
 | **Resources** | Extra container/Pod | Zero overhead |
 | **Prerequisite** | EphemeralContainer feature gate | SSH access to node |
 | **Process view** | Container-only | Host PID mapping included |
+| **Network diag** | Manual | Automated matrix + DNS chain |
 
 ## Universal Debugging
 
@@ -75,6 +76,51 @@ Then use any host tool directly via SSH:
 | .NET | `ssh root@<node> "dotnet-dump collect -p 5782"` |
 | Python/C/Rust | `ssh root@<node> "gdb -p 5782"` |
 | Any | `ssh root@<node> "strace -p 5782"` |
+
+## Network Diagnostics
+
+`--diag` runs automated connectivity and DNS analysis from inside the pod's network namespace:
+
+```bash
+# Auto-discover targets from env vars, active connections, and K8s endpoints
+kubectl pod debug my-pod --diag
+
+# Add custom targets
+kubectl pod debug my-pod --diag --targets api.example.com:443,10.0.0.1:8080
+
+# Custom DNS test names
+kubectl pod debug my-pod --diag -- db.example.com redis.internal.svc.cluster.local
+```
+
+Example output:
+
+```
+=== Network Diagnostics for pod 'my-pod/my-ns' on node 'k8s-node1' ===
+
+--- Connectivity Matrix ---
+TARGET                         PROTO  RESULT   LATENCY   ERROR
+10.96.0.1:443                  TCP    ✅ OK    2.3ms
+10.98.192.17:9090              TCP    ✅ OK    0.8ms
+api.example.com:443            TCP    ❌ FAIL  3002ms    timed out
+
+--- DNS Configuration ---
+nameservers: 10.96.0.10
+search: monitoring.svc.cluster.local svc.cluster.local cluster.local
+ndots: 5
+
+--- DNS Resolution for: kubernetes.default.svc.cluster.local (ndots=5) ---
+  ✅  kubernetes.default.svc.cluster.local.  →  10.96.0.1  (0.8ms)
+  Total: 1 query, 0.8ms, ✅ 10.96.0.1
+
+--- DNS Resolution for: api.example.com (ndots=5) ---
+  ❌  api.example.com.monitoring.svc.cluster.local.  →  NXDOMAIN  (0.6ms)
+  ❌  api.example.com.svc.cluster.local.             →  NXDOMAIN  (0.7ms)
+  ❌  api.example.com.cluster.local.                 →  NXDOMAIN  (0.5ms)
+  ✅  api.example.com.                               →  93.184.216.34  (3.2ms)
+  Total: 4 queries, 5.0ms, ✅ 93.184.216.34
+```
+
+The DNS analysis shows `ndots` search-domain behavior step-by-step — critical for diagnosing why a pod takes too long to resolve external names.
 
 ## Installation
 
@@ -148,6 +194,19 @@ kubectl pod debug my-pod -n production --enter-mount
 kubectl pod debug my-pod --dry-run
 ```
 
+### Network Diagnostics
+
+```bash
+# Full auto-discovery
+kubectl pod debug my-pod --diag
+
+# With extra targets
+kubectl pod debug my-pod --diag --targets external-api.com:443,redis-cluster:6379
+
+# Custom DNS names
+kubectl pod debug my-pod --diag -- mysql.internal.svc.cluster.local proxy.squid.internal
+```
+
 ## CLI Reference
 
 | Option | Short | Default | Description |
@@ -160,6 +219,8 @@ kubectl pod debug my-pod --dry-run
 | `--ssh-port` | | `22` | SSH port |
 | `--ns-type` | | `all` | `network` `pid` `mount` `uts` `ipc` `all` |
 | `--enter-mount` | | false | Include mount namespace |
+| `--diag` | | false | Run automated network diagnostics |
+| `--targets` | | | Comma-separated extra targets for `--diag` |
 | `--runtime` | | `auto` | `auto` `containerd` `docker` |
 | `--kubeconfig` | | auto | kubeconfig path |
 | `--context` | | current | Kubernetes context |
@@ -171,6 +232,7 @@ kubectl pod debug my-pod --dry-run
 - SSH key-based access to all nodes
 - `nsenter` on nodes (included in most Linux distros)
 - `crictl` or `docker` on nodes
+- `dig` or `nslookup` on nodes (for `--diag` DNS analysis)
 
 ## Tech Stack
 

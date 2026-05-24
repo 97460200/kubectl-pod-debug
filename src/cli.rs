@@ -55,6 +55,14 @@ pub struct Cli {
     #[arg(short, long)]
     pub verbose: bool,
 
+    /// Run automated network diagnostics (connectivity matrix + DNS chain)
+    #[arg(long)]
+    pub diag: bool,
+
+    /// Comma-separated extra targets for --diag, e.g. example.com:443,10.0.0.1:8080
+    #[arg(long)]
+    pub targets: Option<String>,
+
     /// Command to execute inside the pod's namespace (use -- to separate from flags)
     #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
     pub command: Vec<String>,
