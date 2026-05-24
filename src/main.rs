@@ -128,6 +128,7 @@ async fn main() -> error::Result<()> {
             &container_id,
             &node_ip,
             &nsenter_arg,
+            pid,
             cli.targets.as_deref(),
             &dns_names,
         )

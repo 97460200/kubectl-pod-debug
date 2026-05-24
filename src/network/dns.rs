@@ -27,8 +27,8 @@ pub struct ResolvConf {
     pub ndots: u32,
 }
 
-pub async fn read_resolv_conf(session: &Handle<SshClient>, nsenter_arg: &str) -> ResolvConf {
-    let cmd = format!("{} /bin/bash -c 'cat /etc/resolv.conf 2>/dev/null'", nsenter_arg);
+pub async fn read_resolv_conf(session: &Handle<SshClient>, pid: u32) -> ResolvConf {
+    let cmd = format!("cat /proc/{}/root/etc/resolv.conf 2>/dev/null", pid);
     let output = exec_command(session, &cmd).await.unwrap_or_default();
 
     let mut nameservers = Vec::new();

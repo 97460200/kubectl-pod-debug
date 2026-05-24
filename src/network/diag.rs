@@ -18,6 +18,7 @@ impl NetworkDiag {
         container_id: &str,
         host_ip: &str,
         nsenter_arg: &str,
+        container_pid: u32,
         user_targets: Option<&str>,
         dns_names: &[String],
     ) -> Self {
@@ -28,7 +29,7 @@ impl NetworkDiag {
 
         let connectivity = check_connectivity(session, nsenter_arg, &targets, 3).await;
 
-        let resolv = read_resolv_conf(session, nsenter_arg).await;
+        let resolv = read_resolv_conf(session, container_pid).await;
 
         let mut dns_results = Vec::new();
         for name in dns_names {
