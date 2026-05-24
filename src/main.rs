@@ -1,6 +1,7 @@
 mod cli;
 mod error;
 mod k8s;
+mod network;
 mod nsenter;
 mod runtime;
 mod ssh;
@@ -59,6 +60,8 @@ async fn main() -> error::Result<()> {
         println!("SSH:        {}@{}:{}", cli.ssh_user, node_ip, cli.ssh_port);
         println!("NS Type:    {}", cli.ns_type);
         println!("Enter Mount: {}", cli.enter_mount);
+        println!("Diag:       {}", cli.diag);
+        println!("Targets:    {:?}", cli.targets);
         println!("Runtime:    {}", cli.runtime);
         println!("Command:    {}", if cli.command.is_empty() { "/bin/bash (interactive)".to_string() } else { cli.command.join(" ") });
         return Ok(());
@@ -105,11 +108,35 @@ async fn main() -> error::Result<()> {
         println!();
     }
 
-    // 10. 构建 nsenter 命令
+    // 10. 构建 nsenter 参数前缀
+    let nsenter_arg = format!("nsenter -t {} -n", pid);
     let nsenter_cmd = nsenter::builder::build_nsenter_command(pid, &cli.ns_type, cli.enter_mount, &cli.command);
     tracing::info!("nsenter command: {}", nsenter_cmd);
 
-    // 11. 执行命令
+    // 11. 诊断模式
+    if cli.diag {
+        let dns_names = if cli.command.is_empty() {
+            vec![
+                "kubernetes.default.svc.cluster.local".to_string(),
+                format!("{}.{}.svc.cluster.local", cli.pod_name, cli.namespace),
+            ]
+        } else {
+            cli.command.clone()
+        };
+        let diag = network::NetworkDiag::run(
+            &session,
+            &container_id,
+            &node_ip,
+            &nsenter_arg,
+            cli.targets.as_deref(),
+            &dns_names,
+        )
+        .await;
+        diag.print_report(&cli.pod_name, &cli.namespace, &node_name);
+        return Ok(());
+    }
+
+    // 12. 执行命令
     if cli.command.is_empty() {
         ssh::exec::interactive_shell(&session, &nsenter_cmd).await?;
     } else {
