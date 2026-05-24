@@ -135,15 +135,21 @@ async fn dig_one(
     ns: &str,
 ) -> DnsStep {
     let cmd = format!(
-        "{} /bin/bash -c 'start=$(date +%s%N); \
-         result=$(dig +short +time=3 +tries=1 {} @{} 2>/dev/null \
-           || nslookup -timeout=3 {} {} 2>/dev/null \
-           | grep -A1 \"Name:\" | tail -1 \
-           | awk \"{{print \\$NF}}\"); \
+        "{} /bin/bash -c ' \
+         start=$(date +%s%N); \
+         if command -v dig >/dev/null 2>&1; then \
+           result=$(dig +short +time=3 +tries=1 {} @{} 2>&1 | head -1); \
+         elif command -v nslookup >/dev/null 2>&1; then \
+           result=$(nslookup -timeout=3 {} {} 2>&1 | grep -A1 Name: | tail -1 | awk \"{{print \\$NF}}\"); \
+         elif command -v getent >/dev/null 2>&1; then \
+           result=$(getent hosts {} 2>&1 | head -1 | awk \"{{print \\$1}}\"); \
+         else \
+           result=\"no-dns-tool\"; \
+         fi; \
          end=$(date +%s%N); \
-         echo \"RESULT=$result\"; \
-         echo \"ELAPSED=$(( (end-start)/1000000 ))\"'",
-        nsenter_arg, query, ns, query, ns
+         echo RESULT=$result; \
+         echo ELAPSED=$(( (end-start)/1000000 ))'",
+        nsenter_arg, query, ns, query, ns, query
     );
 
     let output = exec_command(session, &cmd).await.unwrap_or_default();
