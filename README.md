@@ -10,6 +10,10 @@
   No extra container needed — use host-native debug tools directly.
 </p>
 
+<p align="center">
+  <strong>English</strong> | <a href="README_zh.md">中文</a>
+</p>
+
 ---
 
 ## Why kubectl-pod-debug?
