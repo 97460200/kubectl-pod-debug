@@ -12,6 +12,25 @@ A kubectl plugin for debugging pod network/process via nsenter on the host node.
 
 ## Installation
 
+### One-line Install (Recommended)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/97460200/kubectl-pod-debug/main/install.sh | bash
+```
+
+Install script options:
+
+```bash
+# Install specific version
+curl -fsSL https://raw.githubusercontent.com/97460200/kubectl-pod-debug/main/install.sh | bash -s -- --tag v0.1.0
+
+# Install to custom path
+curl -fsSL https://raw.githubusercontent.com/97460200/kubectl-pod-debug/main/install.sh | bash -s -- --path /opt/bin
+
+# Force overwrite existing installation
+curl -fsSL https://raw.githubusercontent.com/97460200/kubectl-pod-debug/main/install.sh | bash -s -- --force
+```
+
 ### Download Pre-built Binaries
 
 Download the latest release for your platform:
