@@ -53,7 +53,7 @@ pub async fn enrich_with_k8s_resources(
         if let Some(spec) = &svc.spec {
             if let Some(cluster_ip) = &spec.cluster_ip {
                 if !cluster_ip.is_empty() && cluster_ip != "None" {
-                    for port in &spec.ports {
+                    for port in spec.ports.iter().flatten() {
                         ip_map.insert(
                             format!("{}:{}", cluster_ip, port.port),
                             (label.clone(), port.port as u16),
@@ -66,7 +66,7 @@ pub async fn enrich_with_k8s_resources(
         if let Some(ep_ips) = ep_map.get(&svc_name) {
             for ip in ep_ips {
                 if let Some(spec) = &svc.spec {
-                    for port in &spec.ports {
+                    for port in spec.ports.iter().flatten() {
                         let key = format!("{}:{}", ip, port.port);
                         if !ip_map.contains_key(&key) {
                             ip_map.insert(
