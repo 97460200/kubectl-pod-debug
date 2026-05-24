@@ -27,6 +27,25 @@ pub struct ResolvConf {
     pub ndots: u32,
 }
 
+fn extract_ip(raw: &str) -> Option<String> {
+    let raw = raw.trim();
+    if raw.is_empty() {
+        return None;
+    }
+    for word in raw.split_whitespace() {
+        let parts: Vec<&str> = word.split('.').collect();
+        if parts.len() == 4 && parts.iter().all(|p| p.parse::<u8>().is_ok()) {
+            return Some(word.to_string());
+        }
+    }
+    let first = raw.split_whitespace().next().unwrap_or(raw);
+    if !first.is_empty() && first != "no-dns-tool" {
+        Some(first.to_string())
+    } else {
+        None
+    }
+}
+
 pub async fn read_resolv_conf(session: &Handle<SshClient>, pid: u32) -> ResolvConf {
     let cmd = format!("cat /proc/{}/root/etc/resolv.conf 2>/dev/null", pid);
     let output = exec_command(session, &cmd).await.unwrap_or_default();
@@ -106,16 +125,12 @@ pub async fn resolve_dns_chain(
         let step = dig_one(session, nsenter_arg, &query_name, &ns).await;
         total_ms += step.latency_ms;
         if step.ok {
-            if let Some((_, ip)) = step.result.split_once(" A ") {
-                final_ip = Some(ip.trim().to_string());
-            }
+            final_ip = extract_ip(&step.result);
             resolved = true;
         }
         steps.push(step);
     } else if let Some(last) = steps.last() {
-        if let Some((_, ip)) = last.result.split_once(" A ") {
-            final_ip = Some(ip.trim().to_string());
-        }
+        final_ip = extract_ip(&last.result);
     }
 
     DnsResult {
