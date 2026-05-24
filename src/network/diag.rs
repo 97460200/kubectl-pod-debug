@@ -1,7 +1,9 @@
 use crate::network::connectivity::{check_connectivity, ConnectivityResult};
 use crate::network::dns::{read_resolv_conf, resolve_dns_chain, DnsResult, ResolvConf};
+use crate::network::resolve::enrich_with_k8s_resources;
 use crate::network::targets::{auto_discover, parse_user_targets, Target};
 use crate::ssh::connect::SshClient;
+use kube::Client;
 use russh::client::Handle;
 
 pub struct NetworkDiag {
@@ -15,9 +17,11 @@ pub struct NetworkDiag {
 impl NetworkDiag {
     pub async fn run(
         session: &Handle<SshClient>,
+        k8s_client: &Client,
         container_id: &str,
         host_ip: &str,
         nsenter_arg: &str,
+        namespace: &str,
         container_pid: u32,
         user_targets: Option<&str>,
         dns_names: &[String],
@@ -27,7 +31,9 @@ impl NetworkDiag {
             targets.extend(parse_user_targets(raw));
         }
 
-        let connectivity = check_connectivity(session, nsenter_arg, &targets, 3).await;
+        let mut connectivity = check_connectivity(session, nsenter_arg, &targets, 3).await;
+
+        enrich_with_k8s_resources(k8s_client, namespace, &mut connectivity).await;
 
         let resolv = read_resolv_conf(session, container_pid).await;
 
@@ -58,8 +64,8 @@ impl NetworkDiag {
     fn print_connectivity(&self) {
         println!("--- Connectivity Matrix ---");
         println!(
-            "{:<30} {:<6} {:<8} {:<10} {}",
-            "TARGET", "PROTO", "RESULT", "LATENCY", "ERROR"
+            "{:<30} {:<6} {:<8} {:<10} {:<28} {}",
+            "TARGET", "PROTO", "RESULT", "LATENCY", "K8S RESOURCE", "ERROR"
         );
 
         let mut sorted = self.connectivity.clone();
@@ -69,11 +75,12 @@ impl NetworkDiag {
             let status = if r.ok { "✅ OK" } else { "❌ FAIL" };
             let error = if r.ok { "" } else { &r.error };
             println!(
-                "{:<30} {:<6} {:<8} {:<8.1}ms {}",
+                "{:<30} {:<6} {:<8} {:<8.1}ms {:<28} {}",
                 r.target.to_string(),
                 "TCP",
                 status,
                 r.latency_ms,
+                r.resource,
                 error
             );
         }

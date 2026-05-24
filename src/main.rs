@@ -126,9 +126,11 @@ async fn main() -> error::Result<()> {
         };
         let diag = network::NetworkDiag::run(
             &session,
+            &k8s_client,
             &container_id,
             &node_ip,
             &nsenter_arg,
+            &cli.namespace,
             pid,
             cli.targets.as_deref(),
             &dns_names,

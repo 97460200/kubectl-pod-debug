@@ -9,6 +9,7 @@ pub struct ConnectivityResult {
     pub ok: bool,
     pub latency_ms: f64,
     pub error: String,
+    pub resource: String,
 }
 
 impl std::fmt::Display for ConnectivityResult {
@@ -76,6 +77,7 @@ pub async fn check_connectivity(
                     ok,
                     latency_ms: latency,
                     error,
+                    resource: String::new(),
                 });
             }
             Err(e) => {
@@ -84,6 +86,7 @@ pub async fn check_connectivity(
                     ok: false,
                     latency_ms: 0.0,
                     error: format!("exec failed: {}", e),
+                    resource: String::new(),
                 });
             }
         }
