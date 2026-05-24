@@ -1,0 +1,28 @@
+[package]
+name = "kubectl-pod-debug"
+version = "0.1.0"
+edition = "2021"
+description = "kubectl plugin for debugging pod network/process via nsenter on host node"
+license = "MIT"
+
+[[bin]]
+name = "kubectl-pod-debug"
+path = "src/main.rs"
+
+[dependencies]
+clap = { version = "4", features = ["derive", "env"] }
+kube = { version = "0.98", features = ["runtime", "derive"] }
+k8s-openapi = { version = "0.24", features = ["v1_32"] }
+kube-runtime = "0.98"
+tokio = { version = "1", features = ["full"] }
+russh = "0.45"
+russh-keys = "0.45"
+thiserror = "2"
+eyre = "0.6"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+serde_json = "1"
+dirs = "6"
+async-trait = "0.1"
+shellexpand = "3"
+ssh-key = "0.6"
