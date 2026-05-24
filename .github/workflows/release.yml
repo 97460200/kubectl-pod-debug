@@ -46,12 +46,16 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y gcc-aarch64-linux-gnu musl-tools
 
-      - name: Build
+      - name: Build (musl)
+        if: contains(matrix.target, 'musl')
         run: cargo build --release --target ${{ matrix.target }}
         env:
           CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER: aarch64-linux-gnu-gcc
           CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER: musl-gcc
-          RUSTFLAGS: '-C target-feature=-crt-static'
+
+      - name: Build (macOS)
+        if: contains(matrix.target, 'darwin')
+        run: cargo build --release --target ${{ matrix.target }}
 
       - name: Prepare artifact
         run: |
