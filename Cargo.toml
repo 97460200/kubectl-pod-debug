@@ -26,6 +26,7 @@ dirs = "6"
 async-trait = "0.1"
 shellexpand = "3"
 ssh-key = "0.6"
+rpassword = "7"
 
 [profile.release]
 opt-level = "z"

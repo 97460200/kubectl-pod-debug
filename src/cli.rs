@@ -23,6 +23,10 @@ pub struct Cli {
     #[arg(short = 'i', long, default_value = "~/.ssh/id_rsa")]
     pub ssh_key: String,
 
+    /// SSH password (if not provided, will prompt for password if key auth fails)
+    #[arg(long)]
+    pub ssh_password: Option<String>,
+
     /// SSH port
     #[arg(long, default_value_t = 22)]
     pub ssh_port: u16,

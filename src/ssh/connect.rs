@@ -8,7 +8,6 @@ use tracing::{debug, info};
 
 use crate::error::{PodDebugError, Result};
 
-/// SSH client handler that implements the russh client::Handler trait.
 #[derive(Debug)]
 pub struct SshClient;
 
@@ -20,7 +19,6 @@ impl client::Handler for SshClient {
         &mut self,
         server_public_key: &key::PublicKey,
     ) -> std::result::Result<bool, Self::Error> {
-        // TODO: implement proper host key verification in a future version
         debug!(
             "Accepting server key (fingerprint: {})",
             server_public_key.fingerprint()
@@ -29,44 +27,19 @@ impl client::Handler for SshClient {
     }
 }
 
-/// Connect to a remote host via SSH using public key authentication.
-///
-/// # Arguments
-/// * `host` - Remote hostname or IP address
-/// * `port` - SSH port number
-/// * `user` - SSH username
-/// * `key_path` - Path to the SSH private key file (supports `~` expansion)
-///
-/// # Returns
-/// A `client::Handle<SshClient>` that can be used to open channels and execute commands.
 pub async fn connect(
     host: &str,
     port: u16,
     user: &str,
     key_path: &str,
+    password: Option<&str>,
 ) -> Result<client::Handle<SshClient>> {
-    // Expand ~ in the key path
     let expanded_path = shellexpand::tilde(key_path);
     let key_path_str = expanded_path.as_ref();
 
-    info!(
-        "Connecting to {}:{} as {} with key {}",
-        host, port, user, key_path_str
-    );
-
-    // Read the private key
-    let key_pair = keys::load_secret_key(key_path_str, None).map_err(|e| {
-        PodDebugError::SshAuthFailed {
-            user: user.to_string(),
-            reason: format!("Failed to read private key '{}': {}", key_path_str, e),
-        }
-    })?;
-
-    // Configure the SSH client
     let config = Arc::new(client::Config::default());
     let handler = SshClient;
 
-    // Establish the SSH connection
     let addr = format!("{}:{}", host, port);
     let mut session = client::connect(config, addr.as_str(), handler)
         .await
@@ -75,19 +48,46 @@ pub async fn connect(
             reason: format!("{}", e),
         })?;
 
-    // Authenticate with public key
-    let authenticated = session
-        .authenticate_publickey(user, Arc::new(key_pair))
-        .await
-        .map_err(|e| PodDebugError::SshAuthFailed {
-            user: user.to_string(),
-            reason: format!("Authentication error: {}", e),
-        })?;
+    let key_pair = keys::load_secret_key(key_path_str, None);
+    let mut authenticated = false;
+
+    if let Ok(key_pair) = key_pair {
+        info!(
+            "Trying SSH key auth: {}@{}:{} with key {}",
+            user, host, port, key_path_str
+        );
+        authenticated = session
+            .authenticate_publickey(user, Arc::new(key_pair))
+            .await
+            .unwrap_or(false);
+    }
+
+    if !authenticated {
+        if let Some(pwd) = password {
+            info!(
+                "Trying SSH password auth: {}@{}:{}",
+                user, host, port
+            );
+            authenticated = session
+                .authenticate_password(user, pwd)
+                .await
+                .map_err(|e| PodDebugError::SshAuthFailed {
+                    user: user.to_string(),
+                    reason: format!("Password authentication error: {}", e),
+                })?;
+        } else {
+            info!(
+                "SSH key auth failed, prompting for password: {}@{}:{}",
+                user, host, port
+            );
+            authenticated = prompt_password_auth(&mut session, user).await?;
+        }
+    }
 
     if !authenticated {
         return Err(PodDebugError::SshAuthFailed {
             user: user.to_string(),
-            reason: "Public key authentication rejected by server".to_string(),
+            reason: "All authentication methods failed".to_string(),
         });
     }
 
@@ -95,7 +95,37 @@ pub async fn connect(
     Ok(session)
 }
 
-/// Disconnect an SSH session gracefully.
+async fn prompt_password_auth(
+    session: &mut client::Handle<SshClient>,
+    user: &str,
+) -> Result<bool> {
+    use std::io::{self, Write};
+
+    print!("Password for {}@SSH: ", user);
+    io::stdout().flush().map_err(|e| PodDebugError::SshAuthFailed {
+        user: user.to_string(),
+        reason: format!("Failed to flush stdout: {}", e),
+    })?;
+
+    let password = rpassword::read_password().map_err(|e| PodDebugError::SshAuthFailed {
+        user: user.to_string(),
+        reason: format!("Failed to read password: {}", e),
+    })?;
+
+    if password.is_empty() {
+        return Ok(false);
+    }
+
+    let result: bool = session
+        .authenticate_password(user, &password)
+        .await
+        .map_err(|e| PodDebugError::SshAuthFailed {
+            user: user.to_string(),
+            reason: format!("Password authentication error: {}", e),
+        })?;
+    Ok(result)
+}
+
 #[allow(dead_code)]
 pub async fn disconnect(session: &mut client::Handle<SshClient>) -> Result<()> {
     session

@@ -68,7 +68,14 @@ async fn main() -> error::Result<()> {
     }
 
     // 7. 建立 SSH 连接
-    let session = ssh::connect::connect(&node_ip, cli.ssh_port, &cli.ssh_user, &cli.ssh_key).await?;
+    let session = ssh::connect::connect(
+        &node_ip,
+        cli.ssh_port,
+        &cli.ssh_user,
+        &cli.ssh_key,
+        cli.ssh_password.as_deref(),
+    )
+    .await?;
     tracing::info!("SSH connection established to {}", node_ip);
 
     // 8. 检测/确定容器运行时
