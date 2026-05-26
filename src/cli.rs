@@ -79,6 +79,26 @@ pub struct Cli {
     #[arg(long)]
     pub targets: Option<String>,
 
+    /// Capture network packets in Pod namespace (use --pcap-filter for BPF filter)
+    #[arg(long)]
+    pub pcap: bool,
+
+    /// BPF filter for packet capture, e.g. "tcp port 80" or "host example.com"
+    #[arg(long, default_value = "")]
+    pub pcap_filter: String,
+
+    /// Number of packets to capture (default: 100)
+    #[arg(long, default_value_t = 100)]
+    pub pcap_count: usize,
+
+    /// Save pcap file to this path (default: auto-generated in /tmp)
+    #[arg(long)]
+    pub pcap_output: Option<String>,
+
+    /// Interactive debugging assistant with guided troubleshooting
+    #[arg(long)]
+    pub assist: bool,
+
     /// Command to execute inside the pod's namespace (use -- to separate from flags)
     #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
     pub command: Vec<String>,

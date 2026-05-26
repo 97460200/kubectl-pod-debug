@@ -187,7 +187,49 @@ async fn main() -> error::Result<()> {
         return Ok(());
     }
 
-    // 12. 执行命令
+    // 12. 交互式调试助手模式
+    if cli.assist {
+        let nsenter_arg = format!("nsenter -t {} -n", pid);
+        let mut assistant = report::assist::DebugAssistant::new(
+            session,
+            nsenter_arg,
+            pid,
+            cli.pod_name.clone(),
+            cli.namespace.clone(),
+        );
+        assistant.run().await?;
+        return Ok(());
+    }
+
+    // 13. 抓包模式
+    if cli.pcap {
+        use std::path::PathBuf;
+        let nsenter_arg = format!("nsenter -t {} -n", pid);
+        let output_path = cli.pcap_output.as_ref()
+            .map(PathBuf::from)
+            .unwrap_or_else(|| {
+                PathBuf::from(format!(
+                    "/tmp/{}_capture_{}.pcap",
+                    cli.pod_name,
+                    chrono::Utc::now().format("%Y%m%d_%H%M%S")
+                ))
+            });
+
+        let mut capture = report::pcap::PcapCapture::new(
+            session,
+            pid,
+            nsenter_arg,
+            cli.pcap_filter.clone(),
+            cli.pcap_count,
+            output_path,
+        );
+
+        let result = capture.capture().await?;
+        println!("{}", report::pcap::format_pcap_result(&result));
+        return Ok(());
+    }
+
+    // 14. 执行命令
     if cli.command.is_empty() {
         ssh::exec::interactive_shell(&session, &nsenter_cmd).await?;
     } else {
