@@ -1,6 +1,6 @@
 [package]
 name = "kubectl-dbg"
-version = "2.0.0"
+version = "3.0.0"
 edition = "2021"
 description = "Advanced Kubernetes pod debugging tool - SSH to node, nsenter to pod namespace"
 license = "MIT"
@@ -31,6 +31,7 @@ hostname = "0.4"
 chrono = { version = "0.4", features = ["serde"] }
 serde = { version = "1", features = ["derive"] }
 base64 = "0.22"
+reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
 
 [profile.release]
 opt-level = "z"

@@ -18,19 +18,28 @@
 curl -fsSL https://raw.githubusercontent.com/97460200/kubectl-dbg/main/install.sh | bash
 
 # Enter a pod's namespaces interactively
-kubectl-dbg my-pod -n my-ns
+kubectl dbg my-pod -n my-ns
 
 # One-click network diagnostics
-kubectl-dbg my-pod --diag --targets example.com:443
+kubectl dbg my-pod --diag --targets example.com:443
 
 # Smart packet capture (downloads to local)
-kubectl-dbg my-pod --pcap --pcap-filter "tcp port 80"
+kubectl dbg my-pod --pcap --pcap-filter "tcp port 80"
 
 # Interactive debugging assistant
-kubectl-dbg my-pod --assist
+kubectl dbg my-pod --assist
+
+# AI-powered diagnosis
+kubectl dbg my-pod --ai
+
+# View pod event timeline
+kubectl dbg my-pod --timeline
+
+# Compare pod config with ReplicaSet
+kubectl dbg my-pod --diff
 
 # Debug Java (or any language) — process list shows host PIDs
-kubectl-dbg my-pod -v
+kubectl dbg my-pod -v
 # Output: HOST_PID: 12345 CMD: java -jar app.jar
 # Then: ssh root@<node> "jstack 12345"
 ```
@@ -189,6 +198,96 @@ Choose an action:
 Enter choice [1-5]:
 ```
 
+## AI-Powered Diagnosis
+
+`--ai` calls AI to analyze Pod issues and provide diagnosis:
+
+```bash
+# Basic usage (requires Ollama or OpenAI API)
+kubectl dbg my-pod --ai
+
+# Specify model and endpoint
+kubectl dbg my-pod --ai --ai-model gpt-4 --ai-endpoint http://localhost:11434/v1
+
+# With API key for OpenAI
+export OPENAI_API_KEY=your-key
+export OPENAI_BASE_URL=https://api.openai.com/v1
+kubectl dbg my-pod --ai
+```
+
+Example output:
+```
+## 诊断结论
+Pod 处于 Running 状态，但容器不断重启
+
+## 可能原因
+1. 应用启动脚本失败
+2. 健康检查配置不当
+3. 资源限制过低
+
+## 修复建议
+1. 检查容器日志：`kubectl logs my-pod`
+2. 增加资源限制
+3. 调整 liveness probe 参数
+```
+
+## Timeline Debugging
+
+`--timeline` shows Pod lifecycle events:
+
+```bash
+# View events in last 24 hours
+kubectl dbg my-pod --timeline
+
+# Custom time range (1h, 6h, 12h, 24h, 48h, 168h)
+kubectl dbg my-pod --timeline --since 48h
+```
+
+Example output:
+```
+=== Pod Timeline (my-pod/default ===
+
+2026-05-26 10:30:15  ✅  Pod created
+2026-05-26 10:30:16  📍  Scheduled to node-1
+2026-05-26 10:30:25  🚀  Container main started
+2026-05-26 10:30:26  ✅  Container ready
+2026-05-26 14:22:40  ⚠️   Liveness probe failed
+2026-05-26 14:22:41  🔄  Container restarted
+
+=== Container Restarts ===
+
+Total restarts: 3
+Last restart: 2026-05-26 14:22:41 (2 hours ago)
+```
+
+## Configuration Diff
+
+`--diff` compares Pod actual config with ReplicaSet desired config:
+
+```bash
+kubectl dbg my-pod --diff
+```
+
+Example output:
+```
+=== Configuration Diff ===
+Namespace: default
+Pod: my-pod-7f8d9c6b5-x2p8q
+ReplicaSet: my-pod-7f8d9c6b5
+
+🔴 Image Mismatch
+   Pod:     nginx:1.19
+   RS:      nginx:1.21
+   Impact:  可能运行旧版本镜像
+
+⚠️ CPU Limit
+   Pod:     500m
+   RS:      1000m
+   Impact:  资源限制低于预期，可能导致性能问题
+
+✅ All other settings match
+```
+
 ## Installation
 
 ### One-line
@@ -306,6 +405,14 @@ kubectl-dbg my-pod --ssh-port 2222
 | `--pcap-count` | | `100` | Number of packets to capture |
 | `--pcap-output` | | auto | Output path for PCAP file |
 | `--assist` | | false | Launch interactive debugging assistant |
+| `--ai` | | false | Enable AI-powered diagnosis |
+| `--ai-model` | | `gpt-4` | AI model name |
+| `--ai-endpoint` | | | AI API endpoint URL |
+| `--ai-key` | | | AI API key |
+| `--timeline` | | false | Show pod event timeline |
+| `--since` | | `24h` | Time range for timeline |
+| `--diff` | | false | Compare pod config with ReplicaSet |
+| `--force` | | false | Force execution of risky operations |
 | `--runtime` | | `auto` | `auto` `containerd` `docker` |
 | `--kubeconfig` | | auto | kubeconfig path |
 | `--context` | | current | Kubernetes context |

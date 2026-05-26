@@ -99,6 +99,38 @@ pub struct Cli {
     #[arg(long)]
     pub assist: bool,
 
+    /// Enable AI-powered diagnosis (requires OPENAI_* env vars or --ai-* flags)
+    #[arg(long)]
+    pub ai: bool,
+
+    /// AI model name (default: gpt-4)
+    #[arg(long, default_value = "gpt-4")]
+    pub ai_model: String,
+
+    /// AI API endpoint URL (e.g., http://localhost:11434/v1 for Ollama)
+    #[arg(long)]
+    pub ai_endpoint: Option<String>,
+
+    /// AI API key (or use OPENAI_API_KEY env var)
+    #[arg(long)]
+    pub ai_key: Option<String>,
+
+    /// Enable timeline view of pod events
+    #[arg(long)]
+    pub timeline: bool,
+
+    /// Time range for timeline (e.g., 1h, 6h, 24h, 48h, 168h)
+    #[arg(long, default_value = "24h")]
+    pub since: String,
+
+    /// Enable config diff between pod and ReplicaSet
+    #[arg(long)]
+    pub diff: bool,
+
+    /// Force execution of potentially risky operations
+    #[arg(long)]
+    pub force: bool,
+
     /// Command to execute inside the pod's namespace (use -- to separate from flags)
     #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
     pub command: Vec<String>,

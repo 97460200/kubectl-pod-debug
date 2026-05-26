@@ -1,11 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO="97460200/kubectl-pod-debug"
+REPO="97460200/kubectl-dbg"
 INSTALL_PATH="${INSTALL_PATH:-/usr/local/bin}"
-BINARY_NAME="kubectl-pod-debug"
+BINARY_NAME="kubectl-dbg"
 
-# Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -15,7 +14,6 @@ info()  { echo -e "${GREEN}[INFO]${NC}  $*"; }
 warn()  { echo -e "${YELLOW}[WARN]${NC}  $*"; }
 error() { echo -e "${RED}[ERROR]${NC} $*" >&2; exit 1; }
 
-# Detect OS and architecture
 detect_platform() {
     local os arch
     os="$(uname -s | tr '[:upper:]' '[:lower:]')"
@@ -36,7 +34,6 @@ detect_platform() {
     echo "${os}-${arch}"
 }
 
-# Get latest release tag from GitHub API
 get_latest_tag() {
     local tag
     tag="$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" 2>/dev/null \
@@ -50,11 +47,10 @@ get_latest_tag() {
 
 main() {
     echo ""
-    echo "  kubectl-pod-debug Installer"
-    echo "  =========================="
+    echo "  kubectl-dbg Installer"
+    echo "  ====================="
     echo ""
 
-    # Parse arguments
     local tag=""
     local force=false
     local version_only=false
@@ -69,7 +65,7 @@ main() {
                 echo "Usage: install.sh [OPTIONS]"
                 echo ""
                 echo "Options:"
-                echo "  --tag, -t <tag>     Install a specific version (e.g. v0.1.0)"
+                echo "  --tag, -t <tag>     Install a specific version (e.g. v3.0.0)"
                 echo "  --path, -p <path>   Install path (default: /usr/local/bin)"
                 echo "  --force, -f         Overwrite existing installation"
                 echo "  --version           Show current installed version"
@@ -80,22 +76,19 @@ main() {
         esac
     done
 
-    # Show installed version
     if [ "$version_only" = true ]; then
         if command -v "$BINARY_NAME" &>/dev/null; then
             "$BINARY_NAME" --version 2>/dev/null || echo "installed (version unknown)"
         else
-            echo "kubectl-pod-debug is not installed"
+            echo "kubectl-dbg is not installed"
         fi
         exit 0
     fi
 
-    # Detect platform
     local platform
     platform="$(detect_platform)"
     info "Detected platform: ${platform}"
 
-    # Resolve version
     if [ -z "$tag" ]; then
         tag="$(get_latest_tag)"
         info "Latest version: ${tag}"
@@ -103,24 +96,21 @@ main() {
         info "Specified version: ${tag}"
     fi
 
-    local artifact_name="kubectl-pod-debug-${platform}"
+    local artifact_name="kubectl-dbg-${platform}"
     local download_url="https://github.com/${REPO}/releases/download/${tag}/${artifact_name}"
 
-    # Check if already installed
     local target="${INSTALL_PATH}/${BINARY_NAME}"
     if [ -f "$target" ] && [ "$force" = false ]; then
-        warn "kubectl-pod-debug already exists at ${target}"
+        warn "kubectl-dbg already exists at ${target}"
         warn "Use --force to overwrite, or --tag <version> to install a different version"
         exit 1
     fi
 
-    # Download
     info "Downloading ${artifact_name} ..."
     if ! curl -fsSL --progress-bar "$download_url" -o "/tmp/${artifact_name}"; then
         error "Download failed. Check the URL: ${download_url}"
     fi
 
-    # Install
     info "Installing to ${target} ..."
     chmod +x "/tmp/${artifact_name}"
 
@@ -131,11 +121,14 @@ main() {
         sudo mv "/tmp/${artifact_name}" "$target"
     fi
 
-    # Verify
-    if command -v "$BINARY_NAME" &>/dev/null; then
+    if command -v kubectl-dbg &>/dev/null; then
         echo ""
-        info "Successfully installed kubectl-pod-debug ${tag}"
-        info "Run 'kubectl pod-debug --help' for usage"
+        info "Successfully installed kubectl-dbg ${tag}"
+        info "Run 'kubectl-dbg --help' for usage"
+        echo ""
+        echo "As a kubectl plugin:"
+        info "kubectl dbg <pod> --help"
+        echo ""
     else
         warn "Installed to ${target}, but ${INSTALL_PATH} may not be in your PATH"
         warn "Add the following to your shell profile:"

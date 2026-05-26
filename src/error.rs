@@ -26,6 +26,18 @@ pub enum PodDebugError {
     #[error("nsenter execution failed: {reason}")]
     NsenterFailed { reason: String },
 
+    #[error("AI API error: {reason}")]
+    AiApiError { reason: String },
+
+    #[error("AI timeout: {reason}")]
+    AiTimeout { reason: String },
+
+    #[error("Timeline error: {reason}")]
+    TimelineError { reason: String },
+
+    #[error("Config diff error: {reason}")]
+    DiffError { reason: String },
+
     #[error("Kubernetes API error: {0}")]
     KubeError(#[from] kube::Error),
 
@@ -37,6 +49,9 @@ pub enum PodDebugError {
 
     #[error("SSH error: {0}")]
     SshError(#[from] russh::Error),
+
+    #[error("HTTP client error: {0}")]
+    HttpError(#[from] reqwest::Error),
 
     #[error("{reason}")]
     Other { reason: String },

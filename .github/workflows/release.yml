@@ -15,16 +15,16 @@ jobs:
         include:
           - target: x86_64-unknown-linux-musl
             os: ubuntu-latest
-            artifact: kubectl-pod-debug-linux-amd64
+            artifact: kubectl-dbg-linux-amd64
           - target: aarch64-unknown-linux-musl
             os: ubuntu-latest
-            artifact: kubectl-pod-debug-linux-arm64
+            artifact: kubectl-dbg-linux-arm64
           - target: x86_64-apple-darwin
             os: macos-latest
-            artifact: kubectl-pod-debug-darwin-amd64
+            artifact: kubectl-dbg-darwin-amd64
           - target: aarch64-apple-darwin
             os: macos-latest
-            artifact: kubectl-pod-debug-darwin-arm64
+            artifact: kubectl-dbg-darwin-arm64
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -60,8 +60,8 @@ jobs:
       - name: Prepare artifact
         run: |
           cd target/${{ matrix.target }}/release
-          strip kubectl-pod-debug || true
-          mv kubectl-pod-debug ${{ matrix.artifact }}
+          strip kubectl-dbg || true
+          mv kubectl-dbg ${{ matrix.artifact }}
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -86,13 +86,13 @@ jobs:
       - name: Create checksums
         run: |
           cd artifacts
-          sha256sum */kubectl-pod-debug-* > checksums.txt
+          sha256sum */kubectl-dbg-* > checksums.txt
           cat checksums.txt
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            artifacts/*/kubectl-pod-debug-*
+            artifacts/*/kubectl-dbg-*
             artifacts/checksums.txt
           generate_release_notes: true

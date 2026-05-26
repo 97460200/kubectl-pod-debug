@@ -18,19 +18,28 @@
 curl -fsSL https://raw.githubusercontent.com/97460200/kubectl-dbg/main/install.sh | bash
 
 # 交互式进入 Pod 的 namespace
-kubectl-dbg my-pod -n my-ns
+kubectl dbg my-pod -n my-ns
 
 # 一键网络诊断
-kubectl-dbg my-pod --diag --targets example.com:443
+kubectl dbg my-pod --diag --targets example.com:443
 
 # 智能网络抓包（自动下载到本地）
-kubectl-dbg my-pod --pcap --pcap-filter "tcp port 80"
+kubectl dbg my-pod --pcap --pcap-filter "tcp port 80"
 
 # 交互式调试助手
-kubectl-dbg my-pod --assist
+kubectl dbg my-pod --assist
+
+# AI 智能诊断
+kubectl dbg my-pod --ai
+
+# 查看 Pod 事件时间线
+kubectl dbg my-pod --timeline
+
+# 对比 Pod 与 ReplicaSet 配置
+kubectl dbg my-pod --diff
 
 # 调试 Java（或任意语言）——进程列表会显示宿主机 PID
-kubectl-dbg my-pod -v
+kubectl dbg my-pod -v
 # 输出: HOST_PID: 12345 CMD: java -jar app.jar
 # 然后: ssh root@<node> "jstack 12345"
 ```
@@ -189,6 +198,96 @@ Pod: my-pod | 命名空间: default | 节点: k8s-node1
 输入选择 [1-5]:
 ```
 
+## AI 智能诊断
+
+`--ai` 调用 AI 分析 Pod 问题并提供诊断：
+
+```bash
+# 基本用法（需要 Ollama 或 OpenAI API）
+kubectl dbg my-pod --ai
+
+# 指定模型和端点
+kubectl dbg my-pod --ai --ai-model gpt-4 --ai-endpoint http://localhost:11434/v1
+
+# 通过环境变量配置 OpenAI
+export OPENAI_API_KEY=your-key
+export OPENAI_BASE_URL=https://api.openai.com/v1
+kubectl dbg my-pod --ai
+```
+
+输出示例：
+```
+## 诊断结论
+Pod 处于 Running 状态，但容器不断重启
+
+## 可能原因
+1. 应用启动脚本失败
+2. 健康检查配置不当
+3. 资源限制过低
+
+## 修复建议
+1. 检查容器日志：`kubectl logs my-pod`
+2. 增加资源限制
+3. 调整 liveness probe 参数
+```
+
+## 时间旅行调试
+
+`--timeline` 展示 Pod 生命周期事件：
+
+```bash
+# 查看最近 24 小时的事件
+kubectl dbg my-pod --timeline
+
+# 自定义时间范围 (1h, 6h, 12h, 24h, 48h, 168h)
+kubectl dbg my-pod --timeline --since 48h
+```
+
+输出示例：
+```
+=== Pod Timeline (my-pod/default ===
+
+2026-05-26 10:30:15  ✅  Pod 已创建
+2026-05-26 10:30:16  📍  调度到 node-1
+2026-05-26 10:30:25  🚀  容器 main 已启动
+2026-05-26 10:30:26  ✅  容器 Ready
+2026-05-26 14:22:40  ⚠️   存活探针失败
+2026-05-26 14:22:41  🔄  容器已重启
+
+=== 容器重启记录 ===
+
+总重启次数: 3
+上次重启: 2026-05-26 14:22:41 (2 小时前)
+```
+
+## Pod 配置对比
+
+`--diff` 对比 Pod 实际配置与 ReplicaSet 期望配置：
+
+```bash
+kubectl dbg my-pod --diff
+```
+
+输出示例：
+```
+=== 配置对比 ===
+命名空间: default
+Pod: my-pod-7f8d9c6b5-x2p8q
+ReplicaSet: my-pod-7f8d9c6b5
+
+🔴 镜像版本不匹配
+   Pod:     nginx:1.19
+   RS:      nginx:1.21
+   影响:  可能运行旧版本镜像
+
+⚠️ CPU 限制
+   Pod:     500m
+   RS:      1000m
+   影响:  资源限制低于预期，可能导致性能问题
+
+✅ 其他配置一致
+```
+
 ## 安装
 
 ### 一键安装
@@ -306,6 +405,14 @@ kubectl-dbg my-pod --ssh-port 2222
 | `--pcap-count` | | `100` | 捕获数据包数量 |
 | `--pcap-output` | | 自动 | PCAP 文件输出路径 |
 | `--assist` | | false | 启动交互式调试助手 |
+| `--ai` | | false | 启用 AI 智能诊断 |
+| `--ai-model` | | `gpt-4` | AI 模型名称 |
+| `--ai-endpoint` | | | AI API 端点 URL |
+| `--ai-key` | | | AI API Key |
+| `--timeline` | | false | 显示 Pod 事件时间线 |
+| `--since` | | `24h` | 时间线时间范围 |
+| `--diff` | | false | 对比 Pod 与 ReplicaSet 配置 |
+| `--force` | | false | 强制执行高风险操作 |
 | `--runtime` | | `auto` | `auto` `containerd` `docker` |
 | `--kubeconfig` | | 自动 | kubeconfig 文件路径 |
 | `--context` | | 当前 | Kubernetes context |

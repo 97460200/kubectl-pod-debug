@@ -6,10 +6,14 @@ mod nsenter;
 mod report;
 mod runtime;
 mod ssh;
+mod ai;
+mod timeline;
+mod diff;
 
 use cli::Cli;
 use clap::Parser;
 use tracing_subscriber::EnvFilter;
+use chrono::Duration as ChronoDuration;
 
 #[tokio::main]
 async fn main() -> error::Result<()> {
@@ -50,7 +54,89 @@ async fn main() -> error::Result<()> {
     let node_ip = k8s::node::get_node_ip(&k8s_client, &node_name).await?;
     tracing::info!("Pod is running on node '{}' ({})", node_name, node_ip);
 
-    // 6. dry-run 模式：打印信息并返回
+    // 6. 获取容器镜像信息
+    let container_image = pod.spec.as_ref()
+        .and_then(|s| s.containers.iter().find(|c| c.name == container_name))
+        .and_then(|c| c.image.as_ref())
+        .map(|s| s.as_str())
+        .unwrap_or("unknown")
+        .to_string();
+
+    // 7. Timeline 模式（不需要 SSH 连接）
+    if cli.timeline {
+        let collector = timeline::TimelineCollector::new(k8s_client.clone());
+        let since_duration = parse_duration(&cli.since);
+        
+        let events = collector.collect_events(&cli.pod_name, &cli.namespace, since_duration).await
+            .map_err(|e| error::PodDebugError::TimelineError { reason: e.to_string() })?;
+        let output = timeline::TimelineFormatter::format_events(&cli.pod_name, &cli.namespace, &events);
+        println!("{}", output);
+        
+        let restarts = collector.collect_restart_info(&pod);
+        let restart_output = timeline::TimelineFormatter::format_restarts(&restarts);
+        println!("{}", restart_output);
+        
+        return Ok(());
+    }
+
+    // 8. Diff 模式（不需要 SSH 连接）
+    if cli.diff {
+        let collector = diff::ConfigCollector::new(k8s_client.clone());
+        let pod_config = collector.collect_pod_config(&pod).await;
+        
+        match collector.find_replicaset(&pod).await {
+            Ok(Some((rs_name, rs))) => {
+                let rs_config = collector.collect_rs_config(&rs);
+                let diffs = diff::ConfigComparator::compare(&pod_config, &rs_config);
+                let output = diff::ConfigComparator::format_diffs(&diffs, &cli.pod_name, &cli.namespace, &rs_name);
+                println!("{}", output);
+            }
+            Ok(None) => {
+                println!("No ReplicaSet found for this pod, cannot compare config");
+            }
+            Err(e) => {
+                eprintln!("Error finding ReplicaSet: {}", e);
+            }
+        }
+        
+        return Ok(());
+    }
+
+    // 9. AI 诊断模式（不需要 SSH 连接）
+    if cli.ai {
+        let ai_endpoint = cli.ai_endpoint.clone()
+            .or_else(|| std::env::var("OPENAI_BASE_URL").ok())
+            .unwrap_or_else(|| "http://localhost:11434/v1".to_string());
+        
+        let ai_key = cli.ai_key.clone()
+            .or_else(|| std::env::var("OPENAI_API_KEY").ok());
+        
+        let analyzer = ai::AiAnalyzer::new(ai_endpoint, ai_key, cli.ai_model.clone());
+        
+        let pod_phase = pod.status.as_ref()
+            .and_then(|s| s.phase.as_ref())
+            .map(|s| s.as_str())
+            .unwrap_or("Unknown");
+        
+        let diagnostic_data = format!(
+            "Pod: {}\nNamespace: {}\nNode: {}\nContainer: {}\nImage: {}\nPhase: {}\n",
+            cli.pod_name, cli.namespace, node_name, container_name, container_image, pod_phase
+        );
+        
+        match analyzer.diagnose(&diagnostic_data).await {
+            Ok(result) => {
+                println!("\n{}", result);
+            }
+            Err(e) => {
+                eprintln!("AI diagnosis failed: {}", e);
+                eprintln!("\nMake sure you have an AI API server running (e.g., Ollama) or set OPENAI_API_KEY and OPENAI_BASE_URL environment variables.");
+                std::process::exit(1);
+            }
+        }
+        return Ok(());
+    }
+
+    // 10. dry-run 模式：打印信息并返回
     if cli.dry_run {
         println!("=== Dry Run ===");
         println!("Pod:        {}", cli.pod_name);
@@ -246,5 +332,14 @@ fn guess_service_name(pod_name: &str) -> &str {
         &pod_name[..dashes[dashes.len() - 2]]
     } else {
         pod_name
+    }
+}
+
+fn parse_duration(s: &str) -> ChronoDuration {
+    match s.trim_end_matches(|c: char| !c.is_ascii_digit()).parse::<i64>() {
+        Ok(n) if s.ends_with('h') => ChronoDuration::hours(n),
+        Ok(n) if s.ends_with('m') => ChronoDuration::minutes(n),
+        Ok(n) if s.ends_with('d') => ChronoDuration::days(n),
+        _ => ChronoDuration::hours(24),
     }
 }
