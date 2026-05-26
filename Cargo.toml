@@ -1,12 +1,12 @@
 [package]
-name = "kubectl-pod-debug"
-version = "1.2.1"
+name = "kubectl-dbg"
+version = "2.0.0"
 edition = "2021"
-description = "kubectl plugin for debugging pod network/process via nsenter on host node"
+description = "Advanced Kubernetes pod debugging tool - SSH to node, nsenter to pod namespace"
 license = "MIT"
 
 [[bin]]
-name = "kubectl-pod-debug"
+name = "kubectl-dbg"
 path = "src/main.rs"
 
 [dependencies]

@@ -1,4 +1,4 @@
-<h1 align="center">kubectl-pod-debug</h1>
+<h1 align="center">kubectl-dbg</h1>
 
 <p align="center">
   <strong>在宿主机上调试 Kubernetes Pod——无需额外容器。</strong><br/>
@@ -15,19 +15,22 @@
 
 ```bash
 # 一键安装
-curl -fsSL https://raw.githubusercontent.com/97460200/kubectl-pod-debug/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/97460200/kubectl-dbg/main/install.sh | bash
 
 # 交互式进入 Pod 的 namespace
-kubectl pod debug my-pod -n my-ns
+kubectl-dbg my-pod -n my-ns
 
 # 一键网络诊断
-kubectl pod debug my-pod --diag --targets example.com:443
+kubectl-dbg my-pod --diag --targets example.com:443
 
-# 抓网络包
-kubectl pod debug my-pod -- tcpdump -i eth0 -c 100
+# 智能网络抓包（自动下载到本地）
+kubectl-dbg my-pod --pcap --pcap-filter "tcp port 80"
+
+# 交互式调试助手
+kubectl-dbg my-pod --assist
 
 # 调试 Java（或任意语言）——进程列表会显示宿主机 PID
-kubectl pod debug my-pod -v
+kubectl-dbg my-pod -v
 # 输出: HOST_PID: 12345 CMD: java -jar app.jar
 # 然后: ssh root@<node> "jstack 12345"
 ```
@@ -35,19 +38,19 @@ kubectl pod debug my-pod -v
 ## 工作原理
 
 ```
-kubectl pod debug <pod>
+kubectl-dbg <pod>
        │
        ├─ 1. 查询 K8s API → 获取 Pod 信息（节点、容器ID）
-       ├─ 2. SSH 到宿主机节点
+       ├─ 2. SSH 到宿主机节点（优先密钥认证，失败后密码认证）
        ├─ 3. 检测运行时 → 获取容器 PID
        ├─ 4. 扫描 /proc/<pid>/ns/pid → 映射容器所有进程
        ├─ 5. nsenter -n -p -u -i（使用宿主机 /bin/bash，不进入 mount ns）
        └─ 6. 调试命令在 Pod 的 network/PID namespace 中执行
 ```
 
-## 为什么选择 kubectl-pod-debug？
+## 为什么选择 kubectl-dbg？
 
-| | kubectl debug | kubectl-pod-debug |
+| | kubectl debug | kubectl-dbg |
 |---|---|---|
 | **原理** | 创建临时容器 | SSH → 宿主机 nsenter |
 | **可用工具** | 受限于调试镜像 | 宿主机全部原生工具 |
@@ -55,6 +58,8 @@ kubectl pod debug <pod>
 | **前置条件** | EphemeralContainer 特性 | SSH 访问节点 |
 | **进程视图** | 仅容器内部进程 | 包含宿主机 PID 映射 |
 | **网络诊断** | 手动 | 自动化连通性矩阵 + DNS 链路分析 |
+| **网络抓包** | 手动 | 智能 PCAP 文件下载到本地 |
+| **交互助手** | 无 | 引导式故障排查菜单 |
 
 ## 通用调试方案
 
@@ -122,32 +127,94 @@ ndots: 5
 
 DNS 分析会逐级展示 `ndots` 搜索域行为——这是排查"Pod 解析外部域名慢"的关键信息。
 
+## 智能网络抓包
+
+`--pcap` 在 Pod 的网络 namespace 中捕获网络数据包，并自动将 PCAP 文件下载到本地：
+
+```bash
+# 捕获 100 个数据包（默认）并保存到 /tmp
+kubectl-dbg my-pod --pcap
+
+# 使用自定义 BPF 过滤器
+kubectl-dbg my-pod --pcap --pcap-filter "tcp port 8080"
+
+# 捕获更多数据包
+kubectl-dbg my-pod --pcap --pcap-count 500
+
+# 保存到指定位置
+kubectl-dbg my-pod --pcap --pcap-output ~/captures/my-pod.pcap
+```
+
+捕获的 PCAP 文件可以用 Wireshark 打开或用 `tshark` 分析：
+
+```bash
+# 使用 tshark 分析
+tshark -r /tmp/pod_capture_12345.pcap -z io,stat,1,"COUNT(frame)frame"
+```
+
+## 交互式调试助手
+
+`--assist` 启动交互式调试助手，提供引导式故障排查：
+
+```bash
+kubectl-dbg my-pod --assist
+```
+
+功能特性：
+- **自动诊断**：检查 DNS 解析、网络连通性、容器健康状态
+- **命令菜单**：快速访问常用调试命令
+- **问题检测**：识别常见问题并提供修复建议
+- **会话记录**：将诊断结果保存到文件
+
+助手菜单示例：
+```
+╔══════════════════════════════════════════════════════════════╗
+║              kubectl-dbg 交互式调试助手                      ║
+╚══════════════════════════════════════════════════════════════╝
+
+Pod: my-pod | 命名空间: default | 节点: k8s-node1
+
+=== 自动诊断结果 ===
+✅ DNS 解析正常
+✅ Kube API 可访问
+⚠️  检测到高网络延迟
+
+选择操作：
+1) 运行网络诊断
+2) 捕获网络包
+3) 查看进程列表
+4) 检查容器日志
+5) 退出
+
+输入选择 [1-5]:
+```
+
 ## 安装
 
 ### 一键安装
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/97460200/kubectl-pod-debug/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/97460200/kubectl-dbg/main/install.sh | bash
 ```
 
 ### 预编译二进制
 
 | 平台 | 架构 | 文件 |
 |------|------|------|
-| Linux | AMD64 | `kubectl-pod-debug-linux-amd64` |
-| Linux | ARM64 | `kubectl-pod-debug-linux-arm64` |
-| macOS | Intel | `kubectl-pod-debug-darwin-amd64` |
-| macOS | Apple Silicon | `kubectl-pod-debug-darwin-arm64` |
+| Linux | AMD64 | `kubectl-dbg-linux-amd64` |
+| Linux | ARM64 | `kubectl-dbg-linux-arm64` |
+| macOS | Intel | `kubectl-dbg-darwin-amd64` |
+| macOS | Apple Silicon | `kubectl-dbg-darwin-arm64` |
 
-[最新 Release](https://github.com/97460200/kubectl-pod-debug/releases/latest)
+[最新 Release](https://github.com/97460200/kubectl-dbg/releases/latest)
 
 ### 从源码编译
 
 ```bash
-git clone https://github.com/97460200/kubectl-pod-debug.git
-cd kubectl-pod-debug
+git clone https://github.com/97460200/kubectl-dbg.git
+cd kubectl-dbg
 cargo build --release
-sudo cp target/release/kubectl-pod-debug /usr/local/bin/
+sudo cp target/release/kubectl-dbg /usr/local/bin/
 ```
 
 ## 使用示例
@@ -156,55 +223,67 @@ sudo cp target/release/kubectl-pod-debug /usr/local/bin/
 
 ```bash
 # 只进入网络 namespace
-kubectl pod debug my-pod --ns-type network
-
-# 抓包
-kubectl pod debug my-pod -- tcpdump -i eth0 -w /tmp/capture.pcap
+kubectl-dbg my-pod --ns-type network
 
 # 检查 DNS
-kubectl pod debug my-pod --ns-type network -- nslookup kubernetes.default
+kubectl-dbg my-pod --ns-type network -- nslookup kubernetes.default
 
 # 查看 iptables 规则
-kubectl pod debug my-pod --ns-type network -- iptables -L -n -v
+kubectl-dbg my-pod --ns-type network -- iptables -L -n -v
 ```
 
 ### 进程调试
 
 ```bash
 # 查看容器进程
-kubectl pod debug my-pod --ns-type pid -- ps --ppid 1 -o pid,comm
+kubectl-dbg my-pod --ns-type pid -- ps --ppid 1 -o pid,comm
 
 # 跟踪系统调用
-kubectl pod debug my-pod --ns-type pid -- strace -p 1
+kubectl-dbg my-pod --ns-type pid -- strace -p 1
 
 # 文件描述符
-kubectl pod debug my-pod --ns-type pid -- ls -la /proc/1/fd
+kubectl-dbg my-pod --ns-type pid -- ls -la /proc/1/fd
 ```
 
 ### 全 namespace 调试
 
 ```bash
 # 进入除 mount 外的所有 namespace（默认——使用宿主机 /bin/bash）
-kubectl pod debug my-pod -n production
+kubectl-dbg my-pod -n production
 
 # 进入所有 namespace 包括 mount（容器 rootfs）
-kubectl pod debug my-pod -n production --enter-mount
+kubectl-dbg my-pod -n production --enter-mount
 
 # Dry-run——预览
-kubectl pod debug my-pod --dry-run
+kubectl-dbg my-pod --dry-run
 ```
 
 ### 网络诊断
 
 ```bash
 # 全自动发现
-kubectl pod debug my-pod --diag
+kubectl-dbg my-pod --diag
 
 # 加上自定义目标
-kubectl pod debug my-pod --diag --targets external-api.com:443,redis-cluster:6379
+kubectl-dbg my-pod --diag --targets external-api.com:443,redis-cluster:6379
 
 # 自定义 DNS 测试名
-kubectl pod debug my-pod --diag -- mysql.internal.svc.cluster.local proxy.squid.internal
+kubectl-dbg my-pod --diag -- mysql.internal.svc.cluster.local proxy.squid.internal
+```
+
+### SSH 密码认证
+
+如果密钥认证失败，kubectl-dbg 会提示输入密码：
+
+```bash
+# 密钥认证失败后会提示输入密码
+kubectl-dbg my-pod
+
+# 通过参数提供密码
+kubectl-dbg my-pod --ssh-password mypassword
+
+# 指定 SSH 端口
+kubectl-dbg my-pod --ssh-port 2222
 ```
 
 ## CLI 参数
@@ -216,11 +295,17 @@ kubectl pod debug my-pod --diag -- mysql.internal.svc.cluster.local proxy.squid.
 | `--container` | `-c` | 第一个 | 目标容器名称 |
 | `--ssh-user` | | `root` | SSH 用户 |
 | `--ssh-key` | `-i` | `~/.ssh/id_rsa` | SSH 私钥路径 |
+| `--ssh-password` | | | SSH 密码（密钥认证失败时会提示） |
 | `--ssh-port` | | `22` | SSH 端口 |
 | `--ns-type` | | `all` | `network` `pid` `mount` `uts` `ipc` `all` |
 | `--enter-mount` | | false | 同时进入 mount namespace |
 | `--diag` | | false | 运行自动化网络诊断 |
 | `--targets` | | | `--diag` 模式下追加的自定义目标，逗号分隔 |
+| `--pcap` | | false | 在 Pod namespace 中捕获网络包 |
+| `--pcap-filter` | | | BPF 过滤器 |
+| `--pcap-count` | | `100` | 捕获数据包数量 |
+| `--pcap-output` | | 自动 | PCAP 文件输出路径 |
+| `--assist` | | false | 启动交互式调试助手 |
 | `--runtime` | | `auto` | `auto` `containerd` `docker` |
 | `--kubeconfig` | | 自动 | kubeconfig 文件路径 |
 | `--context` | | 当前 | Kubernetes context |

@@ -1,4 +1,4 @@
-<h1 align="center">kubectl-pod-debug</h1>
+<h1 align="center">kubectl-dbg</h1>
 
 <p align="center">
   <strong>Debug Kubernetes pods from the host node — no extra containers needed.</strong><br/>
@@ -15,19 +15,22 @@
 
 ```bash
 # Install
-curl -fsSL https://raw.githubusercontent.com/97460200/kubectl-pod-debug/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/97460200/kubectl-dbg/main/install.sh | bash
 
 # Enter a pod's namespaces interactively
-kubectl pod debug my-pod -n my-ns
+kubectl-dbg my-pod -n my-ns
 
 # One-click network diagnostics
-kubectl pod debug my-pod --diag --targets example.com:443
+kubectl-dbg my-pod --diag --targets example.com:443
 
-# Capture network packets
-kubectl pod debug my-pod -- tcpdump -i eth0 -c 100
+# Smart packet capture (downloads to local)
+kubectl-dbg my-pod --pcap --pcap-filter "tcp port 80"
+
+# Interactive debugging assistant
+kubectl-dbg my-pod --assist
 
 # Debug Java (or any language) — process list shows host PIDs
-kubectl pod debug my-pod -v
+kubectl-dbg my-pod -v
 # Output: HOST_PID: 12345 CMD: java -jar app.jar
 # Then: ssh root@<node> "jstack 12345"
 ```
@@ -35,10 +38,10 @@ kubectl pod debug my-pod -v
 ## How It Works
 
 ```
-kubectl pod debug <pod>
+kubectl-dbg <pod>
        │
        ├─ 1. Query K8s API → pod info (node, containerID)
-       ├─ 2. SSH to host node
+       ├─ 2. SSH to host node (key auth first, password fallback)
        ├─ 3. Detect runtime → get container PID
        ├─ 4. Scan /proc/<pid>/ns/pid → map all container processes
        ├─ 5. nsenter -n -p -u -i (host /bin/bash, no mount ns)
@@ -47,7 +50,7 @@ kubectl pod debug <pod>
 
 ## Why Not `kubectl debug`?
 
-| | `kubectl debug` | `kubectl-pod-debug` |
+| | `kubectl debug` | `kubectl-dbg` |
 |---|---|---|
 | **Mechanism** | Creates ephemeral container | SSH → `nsenter` on host |
 | **Tools** | Limited to debug image | All host-native tools |
@@ -55,6 +58,8 @@ kubectl pod debug <pod>
 | **Prerequisite** | EphemeralContainer feature gate | SSH access to node |
 | **Process view** | Container-only | Host PID mapping included |
 | **Network diag** | Manual | Automated matrix + DNS chain |
+| **Packet capture** | Manual | Smart pcap download to local |
+| **Interactive assist** | None | Guided troubleshooting menu |
 
 ## Universal Debugging
 
@@ -122,32 +127,94 @@ ndots: 5
 
 The DNS analysis shows `ndots` search-domain behavior step-by-step — critical for diagnosing why a pod takes too long to resolve external names.
 
+## Smart Packet Capture
+
+`--pcap` captures network packets in the pod's network namespace and automatically downloads the PCAP file to your local machine:
+
+```bash
+# Capture 100 packets (default) and save to /tmp
+kubectl-dbg my-pod --pcap
+
+# Custom BPF filter
+kubectl-dbg my-pod --pcap --pcap-filter "tcp port 8080"
+
+# Capture more packets
+kubectl-dbg my-pod --pcap --pcap-count 500
+
+# Save to specific location
+kubectl-dbg my-pod --pcap --pcap-output ~/captures/my-pod.pcap
+```
+
+The captured PCAP file can be opened with Wireshark or analyzed with `tshark`:
+
+```bash
+# Analyze with tshark
+tshark -r /tmp/pod_capture_12345.pcap -z io,stat,1,"COUNT(frame)frame"
+```
+
+## Interactive Debugging Assistant
+
+`--assist` launches an interactive debugging assistant with guided troubleshooting:
+
+```bash
+kubectl-dbg my-pod --assist
+```
+
+Features:
+- **Auto-diagnosis**: Checks DNS resolution, network connectivity, container health
+- **Command menu**: Quick access to common debugging commands
+- **Problem detection**: Identifies common issues and suggests fixes
+- **Session logging**: Saves diagnostic results to file
+
+Example assistant menu:
+```
+╔══════════════════════════════════════════════════════════════╗
+║               kubectl-dbg Interactive Assistant              ║
+╚══════════════════════════════════════════════════════════════╝
+
+Pod: my-pod | Namespace: default | Node: k8s-node1
+
+=== Auto-Diagnosis Results ===
+✅ DNS resolution working
+✅ Kube API accessible
+⚠️  High network latency detected
+
+Choose an action:
+1) Run network diagnostics
+2) Capture packets
+3) View process list
+4) Check container logs
+5) Exit
+
+Enter choice [1-5]:
+```
+
 ## Installation
 
 ### One-line
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/97460200/kubectl-pod-debug/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/97460200/kubectl-dbg/main/install.sh | bash
 ```
 
 ### Pre-built Binaries
 
 | Platform | Architecture | File |
 |----------|-------------|------|
-| Linux | AMD64 | `kubectl-pod-debug-linux-amd64` |
-| Linux | ARM64 | `kubectl-pod-debug-linux-arm64` |
-| macOS | Intel | `kubectl-pod-debug-darwin-amd64` |
-| macOS | Apple Silicon | `kubectl-pod-debug-darwin-arm64` |
+| Linux | AMD64 | `kubectl-dbg-linux-amd64` |
+| Linux | ARM64 | `kubectl-dbg-linux-arm64` |
+| macOS | Intel | `kubectl-dbg-darwin-amd64` |
+| macOS | Apple Silicon | `kubectl-dbg-darwin-arm64` |
 
-[Latest Release](https://github.com/97460200/kubectl-pod-debug/releases/latest)
+[Latest Release](https://github.com/97460200/kubectl-dbg/releases/latest)
 
 ### From Source
 
 ```bash
-git clone https://github.com/97460200/kubectl-pod-debug.git
-cd kubectl-pod-debug
+git clone https://github.com/97460200/kubectl-dbg.git
+cd kubectl-dbg
 cargo build --release
-sudo cp target/release/kubectl-pod-debug /usr/local/bin/
+sudo cp target/release/kubectl-dbg /usr/local/bin/
 ```
 
 ## Usage
@@ -156,55 +223,67 @@ sudo cp target/release/kubectl-pod-debug /usr/local/bin/
 
 ```bash
 # Enter network namespace only
-kubectl pod debug my-pod --ns-type network
-
-# Capture packets
-kubectl pod debug my-pod -- tcpdump -i eth0 -w /tmp/capture.pcap
+kubectl-dbg my-pod --ns-type network
 
 # Check DNS
-kubectl pod debug my-pod --ns-type network -- nslookup kubernetes.default
+kubectl-dbg my-pod --ns-type network -- nslookup kubernetes.default
 
 # View iptables rules
-kubectl pod debug my-pod --ns-type network -- iptables -L -n -v
+kubectl-dbg my-pod --ns-type network -- iptables -L -n -v
 ```
 
 ### Process Debugging
 
 ```bash
 # View container processes
-kubectl pod debug my-pod --ns-type pid -- ps --ppid 1 -o pid,comm
+kubectl-dbg my-pod --ns-type pid -- ps --ppid 1 -o pid,comm
 
 # Trace system calls
-kubectl pod debug my-pod --ns-type pid -- strace -p 1
+kubectl-dbg my-pod --ns-type pid -- strace -p 1
 
 # File descriptors
-kubectl pod debug my-pod --ns-type pid -- ls -la /proc/1/fd
+kubectl-dbg my-pod --ns-type pid -- ls -la /proc/1/fd
 ```
 
 ### Full Namespace Debugging
 
 ```bash
 # Enter all except mount (default — access host /bin/bash)
-kubectl pod debug my-pod -n production
+kubectl-dbg my-pod -n production
 
 # Enter all including mount (container rootfs)
-kubectl pod debug my-pod -n production --enter-mount
+kubectl-dbg my-pod -n production --enter-mount
 
 # Dry run — preview
-kubectl pod debug my-pod --dry-run
+kubectl-dbg my-pod --dry-run
 ```
 
 ### Network Diagnostics
 
 ```bash
 # Full auto-discovery
-kubectl pod debug my-pod --diag
+kubectl-dbg my-pod --diag
 
 # With extra targets
-kubectl pod debug my-pod --diag --targets external-api.com:443,redis-cluster:6379
+kubectl-dbg my-pod --diag --targets external-api.com:443,redis-cluster:6379
 
 # Custom DNS names
-kubectl pod debug my-pod --diag -- mysql.internal.svc.cluster.local proxy.squid.internal
+kubectl-dbg my-pod --diag -- mysql.internal.svc.cluster.local proxy.squid.internal
+```
+
+### SSH Password Authentication
+
+If key-based authentication fails, kubectl-dbg will prompt for password:
+
+```bash
+# Will prompt for password if key auth fails
+kubectl-dbg my-pod
+
+# Provide password via argument
+kubectl-dbg my-pod --ssh-password mypassword
+
+# Specify SSH port
+kubectl-dbg my-pod --ssh-port 2222
 ```
 
 ## CLI Reference
@@ -216,11 +295,17 @@ kubectl pod debug my-pod --diag -- mysql.internal.svc.cluster.local proxy.squid.
 | `--container` | `-c` | first | Target container |
 | `--ssh-user` | | `root` | SSH user |
 | `--ssh-key` | `-i` | `~/.ssh/id_rsa` | SSH private key |
+| `--ssh-password` | | | SSH password (prompts if key auth fails) |
 | `--ssh-port` | | `22` | SSH port |
 | `--ns-type` | | `all` | `network` `pid` `mount` `uts` `ipc` `all` |
 | `--enter-mount` | | false | Include mount namespace |
 | `--diag` | | false | Run automated network diagnostics |
 | `--targets` | | | Comma-separated extra targets for `--diag` |
+| `--pcap` | | false | Capture network packets in pod namespace |
+| `--pcap-filter` | | | BPF filter for packet capture |
+| `--pcap-count` | | `100` | Number of packets to capture |
+| `--pcap-output` | | auto | Output path for PCAP file |
+| `--assist` | | false | Launch interactive debugging assistant |
 | `--runtime` | | `auto` | `auto` `containerd` `docker` |
 | `--kubeconfig` | | auto | kubeconfig path |
 | `--context` | | current | Kubernetes context |

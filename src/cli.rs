@@ -1,8 +1,8 @@
 use clap::Parser;
 
-/// kubectl plugin for debugging pod network/process via nsenter on host node.
+/// Advanced Kubernetes pod debugging tool - SSH to node, nsenter to pod namespace
 #[derive(Parser, Debug)]
-#[command(name = "kubectl-pod-debug", version, about)]
+#[command(name = "kubectl-dbg", version, about)]
 pub struct Cli {
     /// Target pod name
     pub pod_name: String,
