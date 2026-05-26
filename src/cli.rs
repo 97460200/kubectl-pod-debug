@@ -63,6 +63,18 @@ pub struct Cli {
     #[arg(long)]
     pub diag: bool,
 
+    /// Generate comprehensive diagnostic report (network + resources + config)
+    #[arg(long)]
+    pub report: bool,
+
+    /// Output format for --report: text, json
+    #[arg(long, default_value = "text", value_parser = ["text", "json"])]
+    pub report_format: String,
+
+    /// Save report to file instead of stdout
+    #[arg(long)]
+    pub report_output: Option<String>,
+
     /// Comma-separated extra targets for --diag, e.g. example.com:443,10.0.0.1:8080
     #[arg(long)]
     pub targets: Option<String>,

@@ -3,6 +3,7 @@ mod error;
 mod k8s;
 mod network;
 mod nsenter;
+mod report;
 mod runtime;
 mod ssh;
 
@@ -144,6 +145,45 @@ async fn main() -> error::Result<()> {
         )
         .await;
         diag.print_report(&cli.pod_name, &cli.namespace, &node_name);
+        return Ok(());
+    }
+
+    // 11. 报告生成模式
+    if cli.report {
+        let nsenter_arg = format!("nsenter -t {} -n", pid);
+        let container_image = pod.spec.as_ref()
+            .and_then(|s| s.containers.iter().find(|c| c.name == container_name))
+            .and_then(|c| c.image.as_ref())
+            .map(|s| s.as_str())
+            .unwrap_or("unknown")
+            .to_string();
+
+        let collector = report::ReportCollector::new(
+            &session,
+            &k8s_client,
+            &container_id,
+            pid,
+            &nsenter_arg,
+            &cli.pod_name,
+            &cli.namespace,
+            &node_name,
+            &node_ip,
+            &container_name,
+            &container_image,
+        );
+
+        let report_data = collector.collect().await?;
+
+        let formatted = report::ReportFormatter::format(&report_data, &cli.report_format);
+
+        if let Some(ref path) = cli.report_output {
+            std::fs::write(path, &formatted).map_err(|e| error::PodDebugError::Other {
+                reason: format!("Failed to write report to '{}': {}", path, e),
+            })?;
+            println!("Report saved to: {}", path);
+        } else {
+            println!("{}", formatted);
+        }
         return Ok(());
     }
 

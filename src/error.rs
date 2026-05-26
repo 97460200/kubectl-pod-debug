@@ -37,6 +37,9 @@ pub enum PodDebugError {
 
     #[error("SSH error: {0}")]
     SshError(#[from] russh::Error),
+
+    #[error("{reason}")]
+    Other { reason: String },
 }
 
 pub type Result<T> = std::result::Result<T, PodDebugError>;
